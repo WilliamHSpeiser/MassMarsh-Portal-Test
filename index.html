@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MassMarsh Remote Sensing Portal</title>
+
+  <!-- Google Analytics -->
+  <!-- ⚠️ REPLACE G-XXXXXXXXXX with your Measurement ID from Step 1 below -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-13590007132"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-13590007132');
+  </script>
+
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: Arial, sans-serif;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    iframe {
+      flex: 1;
+      width: 100%;
+      border: none;
+    }
+
+    .counter-bar {
+      background: #f5f5f5;
+      border-top: 1px solid #e0e0e0;
+      padding: 4px 12px;
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      font-size: 11px;
+      color: #999;
+    }
+  </style>
+</head>
+<body>
+
+  <iframe src="https://massmarsh.projects.earthengine.app/view/massmarsh-remote-sensing-portal"></iframe>
+
+  <div class="counter-bar">
+    <span id="counter">loading...</span>
+  </div>
+
+  <script>
+    // ⚠️ REPLACE THIS with your Google Apps Script web app URL from Step 1
+    const SCRIPT_URL = 'YOUR_APPS_SCRIPT_URL_HERE';
+
+    fetch(SCRIPT_URL + '?action=increment')
+      .then(r => r.json())
+      .then(data => {
+        document.getElementById('counter').textContent =
+          data.count.toLocaleString() + ' tool visits';
+      })
+      .catch(() => {
+        document.getElementById('counter').textContent = '';
+      });
+  </script>
+
+</body>
+</html>
