@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>GeoJSON Upload Test</title>
+  <title>MassMarsh Remote Sensing Portal</title>
 
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-YEX1HRQN48"></script>
   <script>
@@ -15,157 +15,11 @@
 
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-
-    body {
-      font-family: Arial, sans-serif;
-      height: 100vh;
-      display: flex;
-      flex-direction: column;
-    }
-
-    .upload-bar {
-      background: #1a1a2e;
-      padding: 10px 16px;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      flex-shrink: 0;
-    }
-
-    .upload-bar label {
-      color: white;
-      font-size: 13px;
-      font-weight: bold;
-    }
-
-    .upload-bar input[type="file"] {
-      color: white;
-      font-size: 12px;
-    }
-
-    .upload-btn {
-      background: #4CAF50;
-      color: white;
-      border: none;
-      padding: 6px 16px;
-      border-radius: 4px;
-      font-size: 13px;
-      cursor: pointer;
-    }
-
-    .upload-btn:hover { background: #45a049; }
-
-    .upload-btn:disabled {
-      background: #666;
-      cursor: not-allowed;
-    }
-
-    .status {
-      color: #ccc;
-      font-size: 12px;
-      margin-left: auto;
-    }
-
-    .status.error { color: #ff6b6b; }
-    .status.success { color: #69db7c; }
-
-    iframe {
-      flex: 1;
-      width: 100%;
-      border: none;
-    }
+    body { height: 100vh; }
+    iframe { width: 100%; height: 100%; border: none; }
   </style>
 </head>
 <body>
-
-  <div class="upload-bar">
-    <label>Upload GeoJSON:</label>
-    <input type="file" id="fileInput" accept=".geojson,.json" />
-    <button class="upload-btn" id="uploadBtn" disabled onclick="sendToGEE()">
-      Send to Map
-    </button>
-    <span class="status" id="status">Select a .geojson file</span>
-  </div>
-
-  <iframe id="geeFrame" src="https://massmarsh.projects.earthengine.app/view/analyticuploadtest"></iframe>
-
-  <script>
-    var GEE_APP_BASE_URL = 'https://massmarsh.projects.earthengine.app/view/analyticuploadtest';
-
-    var fileInput = document.getElementById('fileInput');
-    var uploadBtn = document.getElementById('uploadBtn');
-    var status = document.getElementById('status');
-    var geeFrame = document.getElementById('geeFrame');
-    var geojsonData = null;
-
-    fileInput.addEventListener('change', function (e) {
-      var file = e.target.files[0];
-      if (!file) return;
-
-      status.className = 'status';
-      status.textContent = 'Reading file...';
-
-      var reader = new FileReader();
-
-      reader.onload = function (event) {
-        try {
-          var parsed = JSON.parse(event.target.result);
-
-          if (!parsed.type || !['Feature', 'FeatureCollection', 'Point', 'MultiPoint',
-              'LineString', 'MultiLineString', 'Polygon', 'MultiPolygon',
-              'GeometryCollection'].includes(parsed.type)) {
-            throw new Error('Not a valid GeoJSON file');
-          }
-
-          geojsonData = parsed;
-
-          var encoded = encodeURIComponent(JSON.stringify(geojsonData));
-          var totalUrlLength = GEE_APP_BASE_URL.length + encoded.length + 10;
-
-          if (totalUrlLength > 8000) {
-            status.className = 'status error';
-            status.textContent = 'File too large for URL transfer (' +
-              Math.round(encoded.length / 1000) + 'KB encoded). Try a simpler geometry.';
-            uploadBtn.disabled = true;
-            return;
-          }
-
-          status.className = 'status success';
-          status.textContent = file.name + ' ready (' +
-            Math.round(encoded.length / 1000) + 'KB encoded)';
-          uploadBtn.disabled = false;
-
-        } catch (err) {
-          status.className = 'status error';
-          status.textContent = err.message;
-          uploadBtn.disabled = true;
-        }
-      };
-
-      reader.readAsText(file);
-    });
-
-    function sendToGEE() {
-      if (!geojsonData) return;
-
-      status.className = 'status';
-      status.textContent = 'Loading in GEE...';
-
-      var encoded = encodeURIComponent(JSON.stringify(geojsonData));
-      var oldFrame = document.getElementById('geeFrame');
-      oldFrame.remove();
-
-      var newFrame = document.createElement('iframe');
-      newFrame.id = 'geeFrame';
-      newFrame.src = GEE_APP_BASE_URL + '#geojson=' + encoded;
-      document.body.appendChild(newFrame);
-
-      geeFrame = newFrame;
-
-      status.className = 'status success';
-      status.textContent = 'Sent to map!';
-    }
-  </script>
-
+  <iframe src="https://massmarsh.projects.earthengine.app/view/massmarsh-remote-sensing-portal"></iframe>
 </body>
 </html>
