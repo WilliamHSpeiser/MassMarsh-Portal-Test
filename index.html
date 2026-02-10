@@ -152,7 +152,7 @@
       status.textContent = 'Loading in GEE...';
 
       var encoded = encodeURIComponent(JSON.stringify(geojsonData));
-      geeFrame.src = GEE_APP_BASE_URL + '#geojson=' + encoded;
+      geeFrame.src = GEE_APP_BASE_URL + '?t=' + Date.now() + '#geojson=' + encoded;
 
       status.className = 'status success';
       status.textContent = 'Sent to map!';
