@@ -36,7 +36,7 @@
       background: #fff;
       border-radius: 12px;
       padding: 2.5rem 2rem 2rem;
-      max-width: 420px;
+      max-width: 480px;
       width: 90%;
       text-align: center;
       box-shadow: 0 8px 30px rgba(0,0,0,0.3);
@@ -58,36 +58,64 @@
       margin-bottom: 1.5rem;
       line-height: 1.5;
     }
-    .popup p a {
-      color: #881c1c;
-      text-decoration: underline;
-      cursor: pointer;
+
+    /* Button row */
+    .btn-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+      margin-top: 0.5rem;
     }
-    .popup p a:hover { color: #6a1515; }
     .popup button {
       background: #881c1c;
       color: #fff;
       border: none;
-      padding: 0.7rem 2.5rem;
+      padding: 0.7rem 1.8rem;
       font-size: 1rem;
       border-radius: 6px;
       cursor: pointer;
       transition: background 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
     }
     .popup button:hover { background: #6a1515; }
+    .popup button .arrow { font-size: 1.1rem; }
 
     .popup label {
       display: flex;
       align-items: center;
       justify-content: center;
       gap: 0.4rem;
-      margin-top: 1rem;
+      margin-top: 1.2rem;
       font-size: 0.8rem;
       color: #777;
       cursor: pointer;
       user-select: none;
     }
     .popup label input { cursor: pointer; }
+
+    /* Video view */
+    .video-wrap {
+      position: relative;
+      width: 100%;
+      padding-bottom: 56.25%; /* 16:9 */
+      margin-bottom: 1rem;
+      border-radius: 8px;
+      overflow: hidden;
+      background: #000;
+    }
+    .video-wrap iframe {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+
+    .view { display: none; }
+    .view.active { display: block; }
   </style>
 </head>
 <body>
@@ -95,13 +123,32 @@
   <!-- Overlay -->
   <div id="overlay">
     <div class="popup">
-      <h2><span class="brand">MassMarsh:</span> <span class="subtitle">Remote Sensing Portal</span></h2>
-      <p>Welcome to the MassMarsh Remote Sensing Portal! <a href="#" id="demoLink">Click here</a> to view our demo video or click continue to proceed to the viewer. You can revisit the demo video by following the link at the bottom of the portal.</p>
-      <button id="continueBtn">Continue</button>
-      <label>
-        <input type="checkbox" id="dismissCheck" />
-        Do not show again for 7 days
-      </label>
+
+      <!-- View 1: Welcome -->
+      <div id="welcomeView" class="view active">
+        <h2><span class="brand">MassMarsh:</span> <span class="subtitle">Remote Sensing Portal</span></h2>
+        <p>Welcome to the MassMarsh Remote Sensing Portal! Click on "Demo" below to view our instructional video, or click "Continue" to proceed to the viewer. If you change your mind at any time, you can view the demo video by clicking the link at the bottom of the portal. Thanks!</p>
+        <div class="btn-row">
+          <button id="continueBtn">Continue</button>
+          <button id="demoBtn">Demo <span class="arrow">&#8594;</span></button>
+        </div>
+        <label>
+          <input type="checkbox" id="dismissCheck" />
+          Do not show again for 7 days
+        </label>
+      </div>
+
+      <!-- View 2: Demo Video -->
+      <div id="demoView" class="view">
+        <h2><span class="subtitle">Remote Sensing Portal Demo Video</span></h2>
+        <div class="video-wrap">
+          <iframe id="demoVideo" src="" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+        </div>
+        <div class="btn-row">
+          <button id="backBtn"><span class="arrow">&#8592;</span> Back</button>
+        </div>
+      </div>
+
     </div>
   </div>
 
@@ -110,11 +157,17 @@
   <script>
     (function () {
       var STORAGE_KEY = 'massmarsh_overlay_dismissed';
-      var SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
+      var SEVEN_DAYS  = 7 * 24 * 60 * 60 * 1000;
+      var VIDEO_URL   = 'https://www.youtube.com/embed/3WWjRSxmh6g';
 
-      var overlay  = document.getElementById('overlay');
-      var btn      = document.getElementById('continueBtn');
-      var checkbox = document.getElementById('dismissCheck');
+      var overlay     = document.getElementById('overlay');
+      var welcomeView = document.getElementById('welcomeView');
+      var demoView    = document.getElementById('demoView');
+      var demoVideo   = document.getElementById('demoVideo');
+      var continueBtn = document.getElementById('continueBtn');
+      var demoBtn     = document.getElementById('demoBtn');
+      var backBtn     = document.getElementById('backBtn');
+      var checkbox    = document.getElementById('dismissCheck');
 
       // Check if previously dismissed within the last 7 days
       try {
@@ -122,13 +175,28 @@
         if (dismissed && (Date.now() - Number(dismissed)) < SEVEN_DAYS) {
           overlay.classList.add('hidden');
         }
-      } catch (e) { /* localStorage unavailable — always show */ }
+      } catch (e) {}
 
-      btn.addEventListener('click', function () {
-        // If checkbox is checked, remember the dismissal
+      // Show demo video view
+      demoBtn.addEventListener('click', function () {
+        welcomeView.classList.remove('active');
+        demoView.classList.add('active');
+        demoVideo.src = VIDEO_URL;
+      });
+
+      // Back to welcome view
+      backBtn.addEventListener('click', function () {
+        demoView.classList.remove('active');
+        welcomeView.classList.add('active');
+        demoVideo.src = ''; // stop video
+      });
+
+      // Continue to portal
+      continueBtn.addEventListener('click', function () {
         if (checkbox.checked) {
           try { localStorage.setItem(STORAGE_KEY, Date.now()); } catch (e) {}
         }
+        demoVideo.src = ''; // stop video if playing
         overlay.classList.add('hidden');
       });
     })();
