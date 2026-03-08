@@ -38,9 +38,15 @@
       padding: 2.5rem 2rem 2rem;
       max-width: 480px;
       width: 90%;
+      transition: max-width 0.3s ease, max-height 0.3s ease;
       text-align: center;
       box-shadow: 0 8px 30px rgba(0,0,0,0.3);
       font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      transition: max-width 0.35s ease, width 0.35s ease;
+    }
+    .popup.expanded {
+      max-width: 75vw;
+      width: 75vw;
     }
     .popup h2 {
       font-size: 1.4rem;
@@ -116,6 +122,7 @@
 
     .view { display: none; }
     .view.active { display: block; }
+    .popup.expanded { max-width: 75vw; width: 75vw; }
   </style>
 </head>
 <body>
@@ -161,6 +168,7 @@
       var VIDEO_URL   = 'https://www.youtube.com/embed/3WWjRSxmh6g';
 
       var overlay     = document.getElementById('overlay');
+      var popup       = document.querySelector('.popup');
       var welcomeView = document.getElementById('welcomeView');
       var demoView    = document.getElementById('demoView');
       var demoVideo   = document.getElementById('demoVideo');
@@ -181,6 +189,7 @@
       demoBtn.addEventListener('click', function () {
         welcomeView.classList.remove('active');
         demoView.classList.add('active');
+        popup.classList.add('expanded');
         demoVideo.src = VIDEO_URL;
       });
 
@@ -188,6 +197,7 @@
       backBtn.addEventListener('click', function () {
         demoView.classList.remove('active');
         welcomeView.classList.add('active');
+        popup.classList.remove('expanded');
         demoVideo.src = ''; // stop video
       });
 
