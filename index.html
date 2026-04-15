@@ -132,23 +132,6 @@
       border: none;
     }
 
-    /* Update Log view */
-    .update-log-wrap {
-      width: 100%;
-      height: 60vh;
-      max-height: 500px;
-      margin-bottom: 1rem;
-      border-radius: 8px;
-      overflow: hidden;
-      background: #fafafa;
-      border: 1px solid #e0e0e0;
-    }
-    .update-log-wrap iframe {
-      width: 100%;
-      height: 100%;
-      border: none;
-    }
-
     .view { display: none; }
     .view.active { display: block; }
   </style>
@@ -167,7 +150,7 @@
           <button id="continueBtn">Continue</button>
           <button id="demoBtn">Demo <span class="arrow">&#8594;</span></button>
         </div>
-        <a href="#" id="updateLogBtn" class="update-log-link">View Update Log</a>
+        <a href="https://docs.google.com/document/d/e/2PACX-1vTrlk7mvM6Uy33mDcj0xBmMbFdRrxr-nrvGZecirgdBnW7_2wLy2mYAXxZ_OtkcYnSrXa_nuVrL4PKB/pub" target="_blank" class="update-log-link">View Update Log</a>
         <label>
           <input type="checkbox" id="dismissCheck" />
           Do not show again for 7 days
@@ -185,17 +168,6 @@
         </div>
       </div>
 
-      <!-- View 3: Update Log -->
-      <div id="updateLogView" class="view">
-        <h2><span class="subtitle">Update Log</span></h2>
-        <div class="update-log-wrap">
-          <iframe id="updateLogFrame" src=""></iframe>
-        </div>
-        <div class="btn-row">
-          <button id="updateLogBackBtn"><span class="arrow">&#8592;</span> Back</button>
-        </div>
-      </div>
-
     </div>
   </div>
 
@@ -206,20 +178,15 @@
       var STORAGE_KEY = 'massmarsh_overlay_dismissed';
       var SEVEN_DAYS  = 7 * 24 * 60 * 60 * 1000;
       var VIDEO_URL   = 'https://www.youtube.com/embed/3WWjRSxmh6g';
-      var UPDATE_LOG_URL = 'https://docs.google.com/document/d/13cQyUtClKpdA2LKvnSm8KoOosXSqum3dpksDoA7gxro/pub?embedded=true';
 
       var overlay        = document.getElementById('overlay');
       var popup          = document.querySelector('.popup');
       var welcomeView    = document.getElementById('welcomeView');
       var demoView       = document.getElementById('demoView');
-      var updateLogView  = document.getElementById('updateLogView');
       var demoVideo      = document.getElementById('demoVideo');
-      var updateLogFrame = document.getElementById('updateLogFrame');
       var continueBtn    = document.getElementById('continueBtn');
       var demoBtn        = document.getElementById('demoBtn');
-      var updateLogBtn   = document.getElementById('updateLogBtn');
       var backBtn        = document.getElementById('backBtn');
-      var updateLogBackBtn = document.getElementById('updateLogBackBtn');
       var checkbox       = document.getElementById('dismissCheck');
 
       // Check if previously dismissed within the last 7 days
@@ -238,15 +205,6 @@
         demoVideo.src = VIDEO_URL;
       });
 
-      // Show update log view
-      updateLogBtn.addEventListener('click', function (e) {
-        e.preventDefault();
-        welcomeView.classList.remove('active');
-        updateLogView.classList.add('active');
-        popup.classList.add('expanded');
-        updateLogFrame.src = UPDATE_LOG_URL;
-      });
-
       // Back to welcome view from demo
       backBtn.addEventListener('click', function () {
         demoView.classList.remove('active');
@@ -255,21 +213,12 @@
         demoVideo.src = ''; // stop video
       });
 
-      // Back to welcome view from update log
-      updateLogBackBtn.addEventListener('click', function () {
-        updateLogView.classList.remove('active');
-        welcomeView.classList.add('active');
-        popup.classList.remove('expanded');
-        updateLogFrame.src = ''; // unload iframe
-      });
-
       // Continue to portal
       continueBtn.addEventListener('click', function () {
         if (checkbox.checked) {
           try { localStorage.setItem(STORAGE_KEY, Date.now()); } catch (e) {}
         }
         demoVideo.src = ''; // stop video if playing
-        updateLogFrame.src = ''; // unload update log
         overlay.classList.add('hidden');
       });
     })();
