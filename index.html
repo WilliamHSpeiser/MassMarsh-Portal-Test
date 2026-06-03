@@ -402,19 +402,18 @@
         submitBtn.disabled = true;
         submitBtn.textContent = 'Adding\u2026';
 
-        // text/plain avoids the CORS preflight that Apps Script can't answer
+        // 'no-cors' lets the request through reliably. The browser won't let us
+        // read Google's reply (it's "opaque"), so the email saves on the server
+        // and we show success once the request has been sent. text/plain is the
+        // only JSON-ish content type allowed in no-cors mode.
         fetch(LISTSERV_ENDPOINT, {
           method: 'POST',
+          mode: 'no-cors',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
           body: JSON.stringify({ email: email })
         })
-        .then(function (res) { return res.json(); })
-        .then(function (data) {
-          if (data && (data.result === 'success' || data.result === 'duplicate')) {
-            showSuccess(email);
-          } else {
-            throw new Error((data && data.message) || 'Unknown error');
-          }
+        .then(function () {
+          showSuccess(email);
         })
         .catch(function (err) {
           console.error('Listserv submit failed:', err);
