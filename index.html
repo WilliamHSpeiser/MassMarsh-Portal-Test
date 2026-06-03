@@ -33,6 +33,7 @@
 
     /* Popup card */
     .popup {
+      position: relative; /* anchor for the listserv close button */
       background: #fff;
       border-radius: 12px;
       padding: 2.5rem 2rem 2rem;
@@ -101,17 +102,27 @@
     }
     .popup label input { cursor: pointer; }
 
-    /* Update Log link */
-    .update-log-link {
-      display: block;
-      margin-top: 1rem;
+    /* Footer links (Join Listserv + Update Log) — same line */
+    .footer-links {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 1rem;
+      margin-top: 1.25rem;
+    }
+    .footer-link {
       font-size: 0.85rem;
       color: #881c1c;
       text-decoration: none;
       cursor: pointer;
     }
-    .update-log-link:hover {
+    .footer-link:hover {
       text-decoration: underline;
+    }
+    .footer-divider {
+      color: #ccc;
+      font-size: 0.85rem;
+      user-select: none;
     }
 
     /* Video view */
@@ -134,6 +145,75 @@
 
     .view { display: none; }
     .view.active { display: block; }
+
+    /* ---- Listserv view ---- */
+    .close-x {
+      position: absolute;
+      top: 0.75rem;
+      right: 0.9rem;
+      width: 1.9rem;
+      height: 1.9rem;
+      padding: 0;
+      background: transparent;
+      color: #999;
+      border: none;
+      font-size: 1.5rem;
+      line-height: 1;
+      border-radius: 50%;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s, color 0.2s;
+    }
+    .close-x:hover {
+      background: #f0f0f0;
+      color: #333;
+    }
+
+    .email-input {
+      width: 100%;
+      padding: 0.7rem 0.9rem;
+      font-size: 1rem;
+      font-family: inherit;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .email-input:focus { border-color: #881c1c; }
+
+    .form-msg {
+      min-height: 1.1rem;
+      margin-top: 0.6rem;
+      font-size: 0.82rem;
+      color: #b00020;
+      text-align: left;
+    }
+
+    .listserv-actions {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 1rem;
+    }
+
+    /* Success state */
+    .success-text {
+      font-size: 1rem;
+      color: #2e7d32;
+      font-weight: 600;
+      padding: 0.8rem 0;
+      word-break: break-word;
+    }
+    .success-check {
+      background: #2e7d32 !important;
+      cursor: default !important;
+      pointer-events: none;
+      padding: 0.7rem 1.1rem !important;
+    }
+    .success-check:hover { background: #2e7d32 !important; }
+
+    .hidden-el { display: none !important; }
   </style>
 </head>
 <body>
@@ -145,12 +225,16 @@
       <!-- View 1: Welcome -->
       <div id="welcomeView" class="view active">
         <h2><span class="brand">MassMarsh:</span> <span class="subtitle">Remote Sensing Portal</span></h2>
-        <p>Welcome to the MassMarsh Remote Sensing Portal! Click on "Demo" below to view our instructional video, or click "Continue" to proceed to the viewer. If you change your mind at any time, you can view the demo video by clicking the link at the bottom of the portal. Thanks!</p>
+        <p>Welcome to the MassMarsh Remote Sensing Portal! Click on "Demo" below to view our instructional video, or click "Continue" to proceed to the viewer. If you change your mind at any time, you can view the demo video by clicking the link at the bottom of the portal. Sign up for email updates/related content or view the updates using the links below.</p>
         <div class="btn-row">
           <button id="continueBtn">Continue</button>
           <button id="demoBtn">Demo <span class="arrow">&#8594;</span></button>
         </div>
-        <a href="https://docs.google.com/document/d/e/2PACX-1vTrlk7mvM6Uy33mDcj0xBmMbFdRrxr-nrvGZecirgdBnW7_2wLy2mYAXxZ_OtkcYnSrXa_nuVrL4PKB/pub" target="_blank" class="update-log-link">View Update Log</a>
+        <div class="footer-links">
+          <a id="listservLink" class="footer-link">Join Listserv</a>
+          <span class="footer-divider">|</span>
+          <a href="https://docs.google.com/document/d/e/2PACX-1vTrlk7mvM6Uy33mDcj0xBmMbFdRrxr-nrvGZecirgdBnW7_2wLy2mYAXxZ_OtkcYnSrXa_nuVrL4PKB/pub" target="_blank" class="footer-link">View Update Log</a>
+        </div>
         <label>
           <input type="checkbox" id="dismissCheck" />
           Do not show again for 7 days
@@ -168,6 +252,26 @@
         </div>
       </div>
 
+      <!-- View 3: Join Listserv -->
+      <div id="listservView" class="view">
+        <button id="listservCloseBtn" class="close-x" aria-label="Close">&times;</button>
+        <h2><span class="subtitle">Join the Listserv</span></h2>
+        <p>Enter your email to receive updates about the MassMarsh Remote Sensing Portal.</p>
+
+        <!-- Input state -->
+        <div id="listservForm">
+          <input type="email" id="emailInput" class="email-input" placeholder="you@example.com" autocomplete="email" />
+          <div id="formMsg" class="form-msg"></div>
+        </div>
+
+        <!-- Success state (hidden until submit succeeds) -->
+        <div id="listservSuccess" class="success-text hidden-el"></div>
+
+        <div class="listserv-actions">
+          <button id="submitBtn">Submit</button>
+        </div>
+      </div>
+
     </div>
   </div>
 
@@ -179,15 +283,32 @@
       var SEVEN_DAYS  = 7 * 24 * 60 * 60 * 1000;
       var VIDEO_URL   = 'https://www.youtube.com/embed/3WWjRSxmh6g';
 
+      /* ====================================================================
+         PASTE YOUR GOOGLE APPS SCRIPT WEB APP URL BELOW.
+         (Setup instructions are in the message that accompanied this file.)
+         It will look like:
+         https://script.google.com/macros/s/AKfycb..../exec
+      ==================================================================== */
+      var LISTSERV_ENDPOINT = 'PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE';
+
       var overlay        = document.getElementById('overlay');
       var popup          = document.querySelector('.popup');
       var welcomeView    = document.getElementById('welcomeView');
       var demoView       = document.getElementById('demoView');
+      var listservView   = document.getElementById('listservView');
       var demoVideo      = document.getElementById('demoVideo');
       var continueBtn    = document.getElementById('continueBtn');
       var demoBtn        = document.getElementById('demoBtn');
       var backBtn        = document.getElementById('backBtn');
       var checkbox       = document.getElementById('dismissCheck');
+
+      var listservLink     = document.getElementById('listservLink');
+      var listservCloseBtn = document.getElementById('listservCloseBtn');
+      var listservForm     = document.getElementById('listservForm');
+      var listservSuccess  = document.getElementById('listservSuccess');
+      var emailInput       = document.getElementById('emailInput');
+      var formMsg          = document.getElementById('formMsg');
+      var submitBtn        = document.getElementById('submitBtn');
 
       // Check if previously dismissed within the last 7 days
       try {
@@ -197,29 +318,115 @@
         }
       } catch (e) {}
 
-      // Show demo video view
+      function showOnly(viewEl) {
+        [welcomeView, demoView, listservView].forEach(function (v) {
+          v.classList.remove('active');
+        });
+        viewEl.classList.add('active');
+      }
+
+      // ---- Demo video ----
       demoBtn.addEventListener('click', function () {
-        welcomeView.classList.remove('active');
-        demoView.classList.add('active');
+        showOnly(demoView);
         popup.classList.add('expanded');
         demoVideo.src = VIDEO_URL;
       });
 
-      // Back to welcome view from demo
       backBtn.addEventListener('click', function () {
-        demoView.classList.remove('active');
-        welcomeView.classList.add('active');
+        showOnly(welcomeView);
         popup.classList.remove('expanded');
         demoVideo.src = ''; // stop video
       });
 
-      // Continue to portal
+      // ---- Continue to portal ----
       continueBtn.addEventListener('click', function () {
         if (checkbox.checked) {
           try { localStorage.setItem(STORAGE_KEY, Date.now()); } catch (e) {}
         }
         demoVideo.src = ''; // stop video if playing
         overlay.classList.add('hidden');
+      });
+
+      // ---- Listserv view ----
+      function resetListservView() {
+        listservForm.classList.remove('hidden-el');
+        listservSuccess.classList.add('hidden-el');
+        listservSuccess.textContent = '';
+        emailInput.value = '';
+        formMsg.textContent = '';
+        submitBtn.textContent = 'Submit';
+        submitBtn.classList.remove('success-check');
+        submitBtn.disabled = false;
+      }
+
+      listservLink.addEventListener('click', function () {
+        resetListservView();
+        showOnly(listservView);
+      });
+
+      // The top-right "x" returns to the main (welcome) window
+      listservCloseBtn.addEventListener('click', function () {
+        showOnly(welcomeView);
+      });
+
+      function isValidEmail(value) {
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+      }
+
+      function showSuccess(email) {
+        // Hide the input, show "[their email] added!"
+        listservForm.classList.add('hidden-el');
+        listservSuccess.textContent = email + ' added!';
+        listservSuccess.classList.remove('hidden-el');
+        // Turn Submit into a non-clickable green check box
+        submitBtn.textContent = '\u2713'; // ✓
+        submitBtn.classList.add('success-check');
+        submitBtn.disabled = true;
+      }
+
+      function handleSubmit() {
+        var email = emailInput.value.trim();
+        formMsg.textContent = '';
+
+        if (!isValidEmail(email)) {
+          formMsg.textContent = 'Please enter a valid email address.';
+          return;
+        }
+
+        if (LISTSERV_ENDPOINT === 'PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE') {
+          formMsg.textContent = 'Listserv is not connected yet. (Add your endpoint URL.)';
+          console.warn('LISTSERV_ENDPOINT has not been set. See setup instructions.');
+          return;
+        }
+
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Adding\u2026';
+
+        // text/plain avoids the CORS preflight that Apps Script can't answer
+        fetch(LISTSERV_ENDPOINT, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ email: email })
+        })
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+          if (data && (data.result === 'success' || data.result === 'duplicate')) {
+            showSuccess(email);
+          } else {
+            throw new Error((data && data.message) || 'Unknown error');
+          }
+        })
+        .catch(function (err) {
+          console.error('Listserv submit failed:', err);
+          formMsg.textContent = 'Something went wrong. Please try again.';
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Submit';
+        });
+      }
+
+      submitBtn.addEventListener('click', handleSubmit);
+      emailInput.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') handleSubmit();
       });
     })();
   </script>
