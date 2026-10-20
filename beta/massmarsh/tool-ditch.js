@@ -88,16 +88,16 @@
     loadDitches(monoClick, false);
   }
   function monoClick(f, latlng) {
-    if (MM.busy(D) || MM.isDrawing()) return; D.loading = true; D.loadingSince = Date.now(); var req = ++D.reqId; ui.prompt.style.display = 'none'; D.panel.setLoading('Loading ditch time series...');
+    if (MM.busy(D) || MM.isDrawing()) return; D.loading = true; D.loadingSince = Date.now(); var req = ++D.reqId; D.last = { f: f, latlng: latlng }; ui.prompt.style.display = 'none'; D.panel.setLoading('Loading ditch time series...');
     MM.withTimeout(ditchSeries(f), 45000).then(function (res) {
       if (req !== D.reqId) return; D.loading = false;
       MM.addToolLayer('selected', L.geoJSON(f, { renderer: MM.canvas, interactive: false, style: { color: 'yellow', weight: 4 } }));
-      var fit = MM.fitSeries(res.pts);
+      var pts = MM.seasonFilterKey(res.pts, D.chartSeason || 'all'); var fit = MM.fitSeries(pts);
       var info = [el('div', 'pv-h lg', 'Ditch Information'), el('div', 'pv-small', 'Lat: ' + latlng.lat.toFixed(5) + ', Lon: ' + latlng.lng.toFixed(5))];
       if (fit.slope !== null && fit.slope !== undefined) { info.push(el('div', 'pv-h lg', 'Mean ' + S.opts.index + ' Slope: ' + fit.slope.toFixed(6) + ' /year')); info.push(el('div', 'pv-note', '(Calculated from averaged time series)')); }
-      info.push(el('div', 'pv-small', 'Valid observations: ' + res.pts.length));
-      if (!res.pts.length) { D.panel.showError(info, MM.cubeAvailable() ? 'No time series data available.' : 'Time series will appear once the series cube is published to the server.'); return; }
-      D.panel.setSeries(res.pts, info, res.nImages);
+      info.push(el('div', 'pv-small', 'Valid observations: ' + pts.length));
+      if (!pts.length) { D.panel.showError(info, MM.cubeAvailable() ? 'No time series data available.' : 'Time series will appear once the series cube is published to the server.'); return; }
+      D.panel.setSeries(pts, info, res.nImages, { season: D.chartSeason || 'all', onSeason: function (k) { D.chartSeason = k; if (D.last) monoClick(D.last.f, D.last.latlng); } });
     }).catch(function (e) { if (req !== D.reqId) return; D.loading = false; D.panel.showError([], 'Error loading time series: ' + e.message); });
   }
 

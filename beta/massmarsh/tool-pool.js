@@ -17,8 +17,8 @@
   function valueLabel(pts) { return s2() && !P.raw && (!pts || pts.referenced !== false) ? 'marsh-referenced MNDWI' : 'MNDWI'; }
   function slopeOf(p) { var v = p[prop('sl')]; return (v === null || v === undefined) ? null : v; }
   function clearTool() { MM.clearToolLayers(); MM.stopDraw(); MM.setClickHandler(null); P.loading = false; P.reqId++; P.multi = []; P.multiNext = 1; P.panel = null; }
-  function seriesPoints(raw) { var pts = MM.poolSeriesPts(raw, S.opts.satellite, P.raw); var out = MM.seasonFilterKey(pts, P.season.key); out.referenced = pts.referenced; return out; }
-  MM.seasonFilterKey = function (pts, key) { return key === 'summer' ? pts.filter(function (p) { var mo = new Date(p.ms).getUTCMonth() + 1; return mo >= 6 && mo <= 8; }) : pts; };
+  function chartSeason() { return P.chartSeason || P.season.key; }      // scenes shown in the mono chart (the panel's selector; defaults to the settings choice)
+  function seriesPoints(raw) { var pts = MM.poolSeriesPts(raw, S.opts.satellite, P.raw); var out = MM.seasonFilterKey(pts, chartSeason()); out.referenced = pts.referenced; return out; }
 
   // ---------- Step 2 / 3 ----------
   function showAnalysisChoice() {
@@ -44,7 +44,7 @@
     add(el('div', 'pv-p', 'Index/Band:')); add(MM.select([['Water Index (MNDWI)', 'MNDWI'], ['Water + Veg. Index (NDWI)', 'NDWI', true], ['Vegetation Index (NDVI)', 'NDVI', true]], 'MNDWI', '280px'));
     add(el('div', 'pv-p', 'Season:')); var seaSel = add(MM.select([[SEASONS.summer.label, 'summer'], [SEASONS.all.label, 'all']], P.season.key, '280px'));
     thin();
-    var go = add(button(kind === 'mono' ? 'Initiate' : 'Initiate Multi-Analysis', function () { S.opts.satellite = satSel.value; S.opts.index = 'MNDWI'; P.season = SEASONS[seaSel.value]; S.step = 4; if (kind === 'mono') initiateMono(); else initiateMulti(); })); go.style.width = kind === 'mono' ? '120px' : '160px';
+    var go = add(button(kind === 'mono' ? 'Initiate' : 'Initiate Multi-Analysis', function () { S.opts.satellite = satSel.value; S.opts.index = 'MNDWI'; P.season = SEASONS[seaSel.value]; P.chartSeason = P.season.key; S.step = 4; if (kind === 'mono') initiateMono(); else initiateMulti(); })); go.style.width = kind === 'mono' ? '120px' : '160px';
     add(button('← Back', function () { showAnalysisChoice(); }, 'pv-back'));
   }
 
@@ -76,7 +76,7 @@
     thin('navy'); MM.slider('Pool Layer Opacity:', setOpacity);
     ui.status = add(el('div')); setStatus(ui.status, 'Loading pools...', '#888', true);
   }
-  function scenesCaption() { var k = P.season.key + (s2() ? '_s2' : ''); return (s2() ? 'Sentinel-2A/B/C (2015-present' : 'Landsat 5-9 (1985-present') + (P.season.key === 'summer' ? ', Jun-Aug' : '') + ') | ' + (P.scenes && P.scenes[k] ? P.scenes[k] : '?') + ' images'; }
+  function scenesCaption() { var sk = chartSeason(), k = sk + (s2() ? '_s2' : ''); return (s2() ? 'Sentinel-2A/B/C (2015-present' : 'Landsat 5-9 (1985-present') + (sk === 'summer' ? ', Jun-Aug' : '') + ') | ' + (P.scenes && P.scenes[k] ? P.scenes[k] : '?') + ' images'; }
   function poolName(p) { return 'Pool ' + p.st + '-' + p.pid; }
 
   // ---------- Mono ----------
@@ -86,7 +86,7 @@
     thin();
     var holder = add(el('div'));
     P.panel = MM.seriesPanel(holder, { pointColor: '#9c27b0', seriesLabel: 'Pool mean', clickWord: 'a pool',
-      titleFn: function (k) { var sat = satLabel() + (P.season.key === 'summer' ? ', summer' : ''), v = valueLabel(P.last && P.last.pts); return k === 'main' ? 'Pool Mean ' + v + ' Time Series (' + sat + ')' : k === 'bp' ? v + ' with Custom Breakpoints (' + satLabel() + ', ' + P.season.chartWord + ')' : v + ' with Change Point (' + satLabel() + ', ' + P.season.chartWord + ')'; },
+      titleFn: function (k) { var cs = SEASONS[chartSeason()], sat = satLabel() + (cs.key === 'summer' ? ', summer' : ''), v = valueLabel(P.last && P.last.pts); return k === 'main' ? 'Pool Mean ' + v + ' Time Series (' + sat + ')' : k === 'bp' ? v + ' with Custom Breakpoints (' + satLabel() + ', ' + cs.chartWord + ')' : v + ' with Change Point (' + satLabel() + ', ' + cs.chartWord + ')'; },
       captionFn: function () { return scenesCaption(); } });
     ui.swipe = add(el('div')); ui.swipe.style.margin = '10px 0';         // oldest vs newest imagery swipe of the selected pool (under the change point section)
     ui.legend = add(el('div')); ui.legend.style.margin = '10px 0';
@@ -105,10 +105,10 @@
       var fit = MM.fitSeries(pts);
       var info = [el('div', 'pv-h lg', 'Pool Information'), el('div', 'pv-small', 'Lat: ' + latlng.lat.toFixed(5) + ', Lon: ' + latlng.lng.toFixed(5)),
         el('div', 'pv-h lg', 'Mean ' + valueLabel(pts) + ' Slope: ' + (fit.slope !== null && fit.slope !== undefined ? fit.slope.toFixed(6) + ' /year' : 'n/a')), el('div', 'pv-note', '(Calculated from averaged time series)'), el('div', 'pv-small', 'Valid observations: ' + pts.length)];
-      info.push(el('div', 'pv-small', 'Stored trend: ' + MM.poolStatsLine(p, S.opts.satellite, P.season.key)));
+      info.push(el('div', 'pv-small', 'Stored trend: ' + MM.poolStatsLine(p, S.opts.satellite, chartSeason())));
       if (s2() && !P.raw && pts.referenced === false && pts.length) { var rw = el('div', 'pv-note', 'No marsh reference is available for this pool (series filled from the pixel cube); raw MNDWI is plotted.'); rw.style.color = '#e65100'; info.push(rw); }
-      if (!pts.length) { P.panel.showError(info, 'No ' + P.season.scenesWord + ' over this selection.'); return; }
-      P.panel.setSeries(pts, info, P.scenes ? P.scenes[P.season.key] : null);
+      if (!pts.length) { P.panel.showError(info, 'No ' + SEASONS[chartSeason()].scenesWord + ' over this selection.'); return; }
+      P.panel.setSeries(pts, info, P.scenes ? P.scenes[chartSeason() + (s2() ? '_s2' : '')] : null, { season: chartSeason(), onSeason: function (k) { P.chartSeason = k; if (P.last) monoClick(P.last.f, P.last.latlng); } });
       if (ui.swipe) poolSwipe(ui.swipe, f);
     }).catch(function (e) { if (req !== P.reqId) return; P.loading = false; P.panel.showError([], 'Error loading time series: ' + e.message); });
   }
@@ -140,42 +140,52 @@
     ctx.putImageData(img, 0, 0);
   }
   function poolSwipe(container, f) {
-    container.innerHTML = ''; if (SW.anim) { cancelAnimationFrame(SW.anim); SW.anim = null; } var seq = ++SW.seq;
+    container.innerHTML = ''; if (SW.anim) { cancelAnimationFrame(SW.anim); SW.anim = null; } var seq = ++SW.seq; SW.closeMenu = null;
     if (typeof pmtiles === 'undefined') return;
     var fb = MM.featureBbox(f); var u0 = MM.toUtm(fb[0], fb[1]), u1 = MM.toUtm(fb[2], fb[3]); var pad = 15;
     var c0 = MM.fromUtm(u0[0] - pad, u0[1] - pad), c1 = MM.fromUtm(u1[0] + pad, u1[1] + pad); var b = [c0[0], c0[1], c1[0], c1[1]];
     var wM = (u1[0] - u0[0]) + 2 * pad, hM = (u1[1] - u0[1]) + 2 * pad;
     container.appendChild(el('div', 'pv-thin')); var note = el('div', 'pv-grey', 'Loading imagery...'); container.appendChild(note);   // own mini section under the chart notes
+    function isRgb(im) { return !/_BW\b/i.test(im.key || '') && !/^(AutoGeoreferencer|NHAP)$/.test(im.source || ''); }
+    function imLabel(im) { return im.year + ' – ' + (SRC_LABEL[im.source] || im.source); }
     MM.imageryCatalog().then(function (cat) {
       if (seq !== SW.seq) return;
       var imgs = (cat.images || []).filter(function (im) { return im.footprint && coversBox(im, b); }).sort(function (p, q) { return catYear(p) - catYear(q); });
-      // left: the earliest colour (RGB) image from 1990 on, so both sides are like for like; black-and-white, CIR (NHAP) and scanned
-      // (AutoGeoreferencer) sets are skipped unless nothing else covers the pool
-      function isRgb(im) { return !/_BW\b/i.test(im.key || '') && !/^(AutoGeoreferencer|NHAP)$/.test(im.source || ''); }
-      var since90 = imgs.filter(function (im) { return catYear(im) >= 1990; }); var old = since90.filter(isRgb)[0] || since90[0]; var nw = imgs.length ? imgs[imgs.length - 1] : null;
-      if (!old || !nw || old.key === nw.key) { note.textContent = 'Not enough imagery covers this pool (need an image from 1990 on and a newer one).'; return; }
+      // defaults: left = the earliest colour image from 1990 on (black-and-white, CIR and scanned sets only when nothing else covers the pool), right = the newest
+      var since90 = imgs.filter(function (im) { return catYear(im) >= 1990; }); var sel = [since90.filter(isRgb)[0] || since90[0], imgs.length ? imgs[imgs.length - 1] : null];
+      if (SW.keep && SW.keep.pid === f.properties.pid) SW.keep.keys.forEach(function (k, i) { var im = imgs.filter(function (x) { return x.key === k; })[0]; if (im) sel[i] = im; });   // keep the user's picks when the panel re-renders (season / raw toggles)
+      if (!sel[0] || !sel[1] || sel[0].key === sel[1].key) { note.textContent = 'Not enough imagery covers this pool (need an image from 1990 on and a newer one).'; return; }
       var side = 18, size = 300; var W = size, H = Math.max(120, Math.round(size * hM / wM)); if (H > 400) { H = 400; W = Math.round(400 * wM / hM); }
-      return Promise.all([fetchWindow(old, b, W, H), fetchWindow(nw, b, W, H)]).then(function (cvs) {
-        if (seq !== SW.seq) return; note.remove(); cvs.forEach(stretchContrast);
+      var cvs = [null, null];
+      function fetchSide(i, im) { return fetchWindow(im, b, W, H).then(function (cv) { if (seq !== SW.seq) return; stretchContrast(cv); cvs[i] = cv; sel[i] = im; SW.keep = { pid: f.properties.pid, keys: [sel[0].key, sel[1].key] }; }); }
+      return Promise.all([fetchSide(0, sel[0]), fetchSide(1, sel[1])]).then(function () {
+        if (seq !== SW.seq) return; note.remove();
+        var wrap = el('div', 'pv-swipe'); container.appendChild(wrap);
+        var out = el('canvas'); out.width = W + 2 * side; out.height = H; out.style.cssText = 'max-width:100%;display:block;border:1px solid #999;background:#fff'; wrap.appendChild(out);
+        var cap = el('div', 'pv-note'); container.appendChild(cap);
+        function updateCaption() { cap.textContent = 'Pool ' + f.properties.st + '-' + f.properties.pid + ': box ' + Math.round(wM) + ' x ' + Math.round(hM) + ' m (pool bounds + 15 m). Left: ' + sel[0].year + ' ' + (SRC_LABEL[sel[0].source] || sel[0].source) + '; right: ' + sel[1].year + ' ' + (SRC_LABEL[sel[1].source] || sel[1].source) + '. Click a side title to choose another image.'; }
+        updateCaption();
         var Z = 18, X0 = lon2x(b[0], Z), X1 = lon2x(b[2], Z), Y0 = lat2y(b[3], Z), Y1 = lat2y(b[1], Z);   // pool outline in canvas pixels (Mercator, linear in the box)
         var rings = MM.ringsOf(f.geometry).reduce(function (a, poly) { return a.concat(poly); }, []).map(function (ring) { return ring.map(function (c) { return [(lon2x(c[0], Z) - X0) * W / (X1 - X0), (lat2y(c[1], Z) - Y0) * H / (Y1 - Y0)]; }); });
-        var out = el('canvas'); out.width = W + 2 * side; out.height = H; out.style.cssText = 'max-width:100%;display:block;border:1px solid #999;background:#fff'; container.appendChild(out);
-        var cap = el('div', 'pv-note', 'Pool ' + f.properties.st + '-' + f.properties.pid + ': box ' + Math.round(wM) + ' x ' + Math.round(hM) + ' m (pool bounds + 15 m). Left: ' + old.year + ' ' + (SRC_LABEL[old.source] || old.source) + '; right: ' + nw.year + ' ' + (SRC_LABEL[nw.source] || nw.source) + '.'); container.appendChild(cap);
-        var ctx = out.getContext('2d'); var t0 = performance.now();
-        function label(text, x) { ctx.save(); ctx.translate(x, H / 2); ctx.rotate(-Math.PI / 2); ctx.fillStyle = '#222'; ctx.font = 'bold 11px Roboto, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(text, 0, 0); ctx.restore(); }
-        function outline() {                                  // the selected pool, outline only (yellow with a dark halo)
-          ctx.save(); ctx.translate(side, 0); ctx.lineJoin = 'round';
-          rings.forEach(function (r) { ctx.beginPath(); r.forEach(function (p, i) { if (i) ctx.lineTo(p[0], p[1]); else ctx.moveTo(p[0], p[1]); }); ctx.closePath(); ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.stroke(); ctx.lineWidth = 1.5; ctx.strokeStyle = '#FFFF00'; ctx.stroke(); });
+        var ctx = out.getContext('2d'); var t0 = performance.now(); var hover = -1;   // hovered side title: 0 = left, 1 = right
+        function outline() {                                  // the selected pool: thin glowing cyan outline, no fill
+          ctx.save(); ctx.translate(side, 0); ctx.lineJoin = 'round'; ctx.strokeStyle = '#00ffff'; ctx.shadowColor = 'rgba(0,255,255,0.95)';
+          rings.forEach(function (r) { ctx.beginPath(); r.forEach(function (p, i) { if (i) ctx.lineTo(p[0], p[1]); else ctx.moveTo(p[0], p[1]); }); ctx.closePath(); ctx.shadowBlur = 8; ctx.lineWidth = 1.2; ctx.stroke(); ctx.shadowBlur = 3; ctx.stroke(); });
           ctx.restore();
         }
-        function paint(frac, watermark) {                     // one swipe position, frac 0..1 of the width; watermark = GIF export
+        function title(i, exporting) {                        // rotated side title with a small stemless down arrow at its top end; cyan while hovered
+          var x = i === 0 ? side / 2 : side + W + side / 2, text = imLabel(sel[i]), col = (!exporting && hover === i) ? '#00e5ff' : '#222';
+          ctx.save(); ctx.font = 'bold 11px Roboto, sans-serif'; var tw = ctx.measureText(text).width; ctx.translate(x, H / 2); ctx.rotate(-Math.PI / 2); ctx.fillStyle = col; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(text, 0, 0); ctx.restore();
+          var ty = Math.max(9, H / 2 - tw / 2 - 4); ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(x - 4.5, ty - 7); ctx.lineTo(x + 4.5, ty - 7); ctx.lineTo(x, ty); ctx.closePath(); ctx.fill();
+        }
+        function paint(frac, exporting) {                     // one swipe position, frac 0..1 of the width; exporting = GIF frame (watermark, no hover colour)
           var x = Math.round(frac * W);
           ctx.clearRect(0, 0, out.width, H); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, out.width, H);
           if (x > 0) ctx.drawImage(cvs[0], 0, 0, x, H, side, 0, x, H); if (W - x > 0) ctx.drawImage(cvs[1], x, 0, W - x, H, side + x, 0, W - x, H);
           outline();
           ctx.fillStyle = '#ffeb3b'; ctx.fillRect(side + x - 1, 0, 2, H);
-          if (watermark) { ctx.save(); ctx.font = '8px Roboto, sans-serif'; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom'; ctx.shadowColor = 'rgba(0,0,0,0.9)'; ctx.shadowBlur = 2; ctx.fillStyle = '#fff'; ctx.fillText('source: MassMarshViewer.com', side + W - 3, H - 2); ctx.restore(); }
-          label(old.year + ' \u2013 ' + (SRC_LABEL[old.source] || old.source), side / 2); label(nw.year + ' \u2013 ' + (SRC_LABEL[nw.source] || nw.source), side + W + side / 2);
+          title(0, exporting); title(1, exporting);
+          if (exporting) { ctx.save(); ctx.font = '8px Roboto, sans-serif'; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom'; ctx.shadowColor = 'rgba(0,0,0,0.9)'; ctx.shadowBlur = 2; ctx.fillStyle = '#fff'; ctx.fillText('source: MassMarshViewer.com', side + W - 3, H - 2); ctx.restore(); }
         }
         function frame(now) {
           if (seq !== SW.seq || !out.isConnected) { SW.anim = null; return; }
@@ -183,13 +193,32 @@
           SW.anim = requestAnimationFrame(frame);
         }
         SW.anim = requestAnimationFrame(frame);
+        // side titles: hovering turns them cyan, a click opens the list of every image covering the pool for that side
+        function sideAt(ev) { var r = out.getBoundingClientRect(); var x = (ev.clientX - r.left) * out.width / r.width; return x < side ? 0 : x > side + W ? 1 : -1; }
+        var menu = null;
+        function closeMenu() { if (menu) { menu.remove(); menu = null; } }
+        function openMenu(i) {
+          closeMenu(); menu = el('div', 'pv-swipe-menu'); menu.appendChild(el('div', 'pv-swipe-menu-h', (i === 0 ? 'Left' : 'Right') + ' image'));
+          imgs.forEach(function (im) {
+            var it = el('div', 'pv-swipe-item' + (im.key === sel[i].key ? ' sel' : ''), imLabel(im));
+            it.addEventListener('click', function (ev) { ev.stopPropagation(); closeMenu(); if (im.key === sel[i].key) return; cap.textContent = 'Loading ' + imLabel(im) + '...'; fetchSide(i, im).then(function () { if (seq === SW.seq) updateCaption(); }).catch(function (e) { cap.textContent = 'Could not load ' + imLabel(im) + ': ' + e.message; }); });
+            menu.appendChild(it);
+          });
+          var r = out.getBoundingClientRect(), scale = r.width / out.width; menu.style.left = Math.round((i === 0 ? side : side + W + side) * scale) + 'px'; menu.style.top = '4px';
+          wrap.appendChild(menu); var mw = menu.offsetWidth; if (menu.offsetLeft + mw > wrap.clientWidth) menu.style.left = Math.max(0, wrap.clientWidth - mw) + 'px';
+        }
+        out.addEventListener('mousemove', function (ev) { var s = sideAt(ev); if (s !== hover) { hover = s; out.style.cursor = s >= 0 ? 'pointer' : ''; } });
+        out.addEventListener('mouseleave', function () { hover = -1; out.style.cursor = ''; });
+        out.addEventListener('click', function (ev) { ev.stopPropagation(); var s = sideAt(ev); if (s >= 0) openMenu(s); else closeMenu(); });
+        SW.closeMenu = function (ev) { if (menu && !menu.contains(ev.target)) closeMenu(); };
+        if (!SW.docClick) { SW.docClick = true; document.addEventListener('click', function (ev) { if (SW.closeMenu) SW.closeMenu(ev); }); }
         // GIF download: one sweep left -> right -> left, 40 frames at 100 ms, encoded in the browser (gifenc, loaded on demand)
         var row = el('div', 'pv-row'); var gb = button('Download GIF', function () {
           gb.disabled = true; gb.textContent = 'Encoding GIF...';
           import('https://cdn.jsdelivr.net/npm/gifenc@1.0.3/+esm').then(function (G) {
             var enc = G.GIFEncoder(); var N = 40;
             for (var k = 0; k < N; k++) { var fr = k / (N - 1); paint(k < N / 2 ? fr * 2 : 2 - fr * 2, true); var data = ctx.getImageData(0, 0, out.width, H).data; var pal = G.quantize(data, 256); var idx = G.applyPalette(data, pal); enc.writeFrame(idx, out.width, H, { palette: pal, delay: 100, repeat: 0 }); }
-            enc.finish(); var blob = new Blob([enc.bytes()], { type: 'image/gif' }); var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'pool_' + f.properties.st + '_' + f.properties.pid + '_' + String(old.year).slice(0, 4) + '_vs_' + String(nw.year).slice(0, 4) + '.gif'; a.click();
+            enc.finish(); var blob = new Blob([enc.bytes()], { type: 'image/gif' }); var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'pool_' + f.properties.st + '_' + f.properties.pid + '_' + String(sel[0].year).slice(0, 4) + '_vs_' + String(sel[1].year).slice(0, 4) + '.gif'; a.click();
             gb.disabled = false; gb.textContent = 'Download GIF';
           }).catch(function (e) { gb.disabled = false; gb.textContent = 'Download GIF'; cap.textContent += ' (GIF encoding failed: ' + e.message + ')'; });
         }, 'small'); row.appendChild(gb); container.appendChild(row);

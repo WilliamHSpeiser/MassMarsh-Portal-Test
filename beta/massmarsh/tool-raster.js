@@ -78,9 +78,10 @@
     regionTools(function (rings) { showRegion(rings); });
     thin();
     var holder = add(el('div'));
+    R.chartSeason = S.opts.season.key; R.last = null;          // scenes shown in the chart (defaults to the settings choice); last query for a re-run
     R.panel = MM.seriesPanel(holder, { pointColor: '#9c27b0', seriesLabel: 'Pixel', clickWord: 'the map',
       titleFn: function (k) { var lab = R.seriesLabel || 'Pixel'; return k === 'main' ? lab + ' ' + S.opts.index + ' Time Series (' + S.opts.satellite + ')' : k === 'bp' ? S.opts.index + ' with Custom Breakpoints (' + S.opts.satellite + ')' : lab + ' ' + S.opts.index + ' with Change Point (' + S.opts.satellite + ')'; },
-      captionFn: function (P) { return 'Landsat 5-9 (1985-present' + S.opts.season.word + ') | ' + (P.nImages || '?') + ' images'; } });
+      captionFn: function (P) { return 'Landsat 5-9 (1985-present' + MM.SEASONS[R.chartSeason || S.opts.season.key].word + ') | ' + (P.nImages || '?') + ' images'; } });
     ui.legend = add(el('div')); ui.legend.style.margin = '10px 0';
     thin('light');
     add(button('← Change Satellite/Index', function () { showSettings('inspector'); }));
@@ -130,7 +131,7 @@
   function showPixel(latlng) {
     if (R.loading || !R.georaster) return; var g = R.georaster;
     var rc = rasterIndex(g, latlng.lng, latlng.lat); var slope = rc ? rasterValue(g, 0, rc[0], rc[1]) : null; var obs = rc && g.values.length > 1 ? rasterValue(g, 1, rc[0], rc[1]) : null;
-    R.loading = true; var req = ++R.reqId; R.seriesLabel = 'Pixel'; R.panel.setLoading('Loading time series...');
+    R.loading = true; var req = ++R.reqId; R.seriesLabel = 'Pixel'; R.last = { kind: 'pixel', arg: latlng }; R.panel.setLoading('Loading time series...');
     MM.removeToolLayer('region'); MM.addToolLayer('marker', L.circleMarker(latlng, { radius: 6, color: 'yellow', weight: 2, fill: false }));
     var info = [el('div', 'pv-h lg', 'Pixel Information'), el('div', 'pv-small', 'Lat: ' + latlng.lat.toFixed(5) + ', Lon: ' + latlng.lng.toFixed(5))];
     if (slope === null) { R.loading = false; R.panel.showError(info, 'No data at this pixel.'); return; }
@@ -139,9 +140,10 @@
     MM.cubeReady().then(function () { return MM.pixelSeries(latlng.lng, latlng.lat, S.opts.index); }).then(function (res) {
       if (req !== R.reqId) return; R.loading = false;
       if (!res || !res.pts) { R.panel.showError(info, MM.cubeAvailable() ? 'No time series data available.' : 'Pixel time series will appear once the series cube is published to the server.'); return; }
-      R.panel.setSeries(MM.seasonFilter(res.pts), info, res.nImages);
+      R.panel.setSeries(MM.seasonFilterKey(res.pts, R.chartSeason), info, res.nImages, seasonExtra());
     }).catch(function (e) { if (req !== R.reqId) return; R.loading = false; R.panel.showError(info, 'Error loading time series: ' + e.message); });
   }
+  function seasonExtra() { return { season: R.chartSeason, onSeason: function (k) { R.chartSeason = k; if (!R.last) return; if (R.last.kind === 'pixel') showPixel(R.last.arg); else showRegion(R.last.arg); } }; }
   function regionPixels(rings) {                               // cube pixels inside the drawn shape and the selection
     var sel = S.selection; var gm = MM.gridMask([rings], sel.method === 'Bounding Boxes' && sel.marshPolys ? sel.marshPolys : sel.polys);
     var px = MM.cubePixelsInMask(gm);
@@ -150,7 +152,7 @@
   }
   function showRegion(rings) {
     if (R.loading || !R.georaster) return; var g = R.georaster;
-    R.loading = true; var req = ++R.reqId; R.seriesLabel = 'Region Mean'; R.panel.setLoading('Loading region time series...');
+    R.loading = true; var req = ++R.reqId; R.seriesLabel = 'Region Mean'; R.last = { kind: 'region', arg: rings }; R.panel.setLoading('Loading region time series...');
     MM.removeToolLayer('marker'); MM.addToolLayer('region', L.geoJSON({ type: 'Polygon', coordinates: rings }, { interactive: false, style: { color: 'yellow', weight: 2, fillColor: '#FFFF00', fillOpacity: 0.125 } }));
     var bb = MM.bboxOf([rings]); var vals = [];
     var c0 = Math.max(0, Math.floor((bb[0] - g.xmin) / g.pixelWidth)), c1 = Math.min(g.width - 1, Math.floor((bb[2] - g.xmin) / g.pixelWidth));
@@ -164,7 +166,7 @@
       var px = regionPixels(rings); var keys = Object.keys(px.byBlock);
       if (!keys.length) { R.loading = false; R.panel.showError(info, 'No time series data available.'); return; }
       if (keys.length > MAX_REGION_BLOCKS) { R.loading = false; info.push(el('div', 'pv-warn', 'Region too large for the averaged series (' + keys.length + ' blocks, max ' + MAX_REGION_BLOCKS + '); showing statistics only.')); R.panel.setSeries([], info, 0); return; }
-      return MM.meanSeries(px.byBlock, S.opts.index).then(function (res) { if (req !== R.reqId) return; R.loading = false; R.panel.setSeries(MM.seasonFilter(res.pts), info, res.nImages); });
+      return MM.meanSeries(px.byBlock, S.opts.index).then(function (res) { if (req !== R.reqId) return; R.loading = false; R.panel.setSeries(MM.seasonFilterKey(res.pts, R.chartSeason), info, res.nImages, seasonExtra()); });
     }).catch(function (e) { if (req !== R.reqId) return; R.loading = false; R.panel.showError(info, 'Error loading time series: ' + e.message); });
   }
 

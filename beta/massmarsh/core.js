@@ -575,7 +575,8 @@ window.MM = (function () {
     var a = hexToRgb(pal[i]), b = hexToRgb(pal[i + 1]);
     return 'rgb(' + Math.round(a[0] + (b[0] - a[0]) * u) + ',' + Math.round(a[1] + (b[1] - a[1]) * u) + ',' + Math.round(a[2] + (b[2] - a[2]) * u) + ')';
   }
-  function seasonFilter(pts) { return S.opts.season.key === 'summer' ? pts.filter(function (p) { var mo = new Date(p.ms).getUTCMonth() + 1; return mo >= 6 && mo <= 8; }) : pts; }
+  function seasonFilter(pts) { return seasonFilterKey(pts, S.opts.season.key); }
+  function seasonFilterKey(pts, key) { return key === 'summer' ? pts.filter(function (p) { var mo = new Date(p.ms).getUTCMonth() + 1; return mo >= 6 && mo <= 8; }) : pts; }
   function dayPts(days, vals, plats, scale) { var out = []; for (var i = 0; i < days.length; i++) { var ms = EPOCH_MS + days[i] * DAY_MS; out.push({ ms: ms, years: (ms - EPOCH_MS) / YEAR_MS, value: vals[i] / (scale || 1), plat: plats ? plats[i] : undefined }); } return out; }
 
   // ---------- charts (Chart.js scatter on a time axis, as in the Pool Viewer) ----------
@@ -634,7 +635,11 @@ window.MM = (function () {
   function seriesPanel(parent, opts) {
     var P = { pts: null, breakpoints: [], nImages: null };
     P.info = el('div'); P.chart = el('div'); P.custom = el('div'); P.custom.style.display = 'none'; parent.appendChild(P.info); parent.appendChild(P.chart); parent.appendChild(P.custom);
-    P.custom.appendChild(el('div', 'pv-thin')); P.custom.appendChild(el('div', 'pv-h', 'Specific Date Range Trend:')); P.custom.appendChild(el('div', 'pv-note', 'Add dates to divide time series into segments:'));
+    P.custom.appendChild(el('div', 'pv-thin'));
+    // scenes shown in the chart (summer only / all); defaults to the season chosen in the tool's settings, shown only when the tool handles it
+    P.seasonRow = el('div', 'pv-row'); P.seasonRow.appendChild(el('span', 'pv-small', 'Scenes shown:')); P.seasonSel = select([['Summer (Jun-Aug)', 'summer'], ['All scenes', 'all']], 'all', '150px'); P.seasonRow.appendChild(P.seasonSel); P.seasonRow.style.display = 'none'; P.custom.appendChild(P.seasonRow);
+    P.seasonSel.addEventListener('change', function () { if (P.onSeason) P.onSeason(P.seasonSel.value); });
+    P.custom.appendChild(el('div', 'pv-h', 'Specific Date Range Trend:')); P.custom.appendChild(el('div', 'pv-note', 'Add dates to divide time series into segments:'));
     var r = el('div', 'pv-row'); r.appendChild(el('span', 'pv-small', 'Date:')); P.bpInput = el('input'); P.bpInput.type = 'text'; P.bpInput.placeholder = 'YYYY-MM-DD'; P.bpInput.style.width = '100px'; r.appendChild(P.bpInput); P.custom.appendChild(r);
     P.trendInfo = el('div'); P.custom.appendChild(P.trendInfo);
     P.trendBtns = el('div', 'pv-row'); P.addTrend = button('Add Second Trend', addBreakpoint); P.addTrend.disabled = true; P.clearTrend = button('Clear All', clearBreakpoints); P.clearTrend.disabled = true; P.trendBtns.appendChild(P.addTrend); P.trendBtns.appendChild(P.clearTrend); P.custom.appendChild(P.trendBtns);
@@ -646,9 +651,10 @@ window.MM = (function () {
       if (label) { var ld = el('div', '', label); ld.style.cssText = 'color:#c00;font-size:13px;font-weight:bold'; P.info.appendChild(ld); } };
     P.clear = function () { P.setLoading(null); };
     P.showError = function (nodes, text) { P.info.innerHTML = ''; (nodes || []).forEach(function (n) { P.info.appendChild(n); }); P.chart.innerHTML = ''; P.chart.appendChild(el('div', 'pv-err', text)); };
-    P.setSeries = function (pts, infoNodes, nImages) {
+    P.setSeries = function (pts, infoNodes, nImages, extra) {   // extra: { season: 'summer'|'all', onSeason(key) } enables the scenes selector
       P.info.innerHTML = ''; (infoNodes || []).forEach(function (n) { P.info.appendChild(n); }); P.chart.innerHTML = ''; P.trendInfo.innerHTML = ''; P.cpInfo.innerHTML = ''; resetButtons();
-      P.pts = pts; P.nImages = nImages;
+      P.pts = pts; P.nImages = nImages; extra = extra || {}; P.onSeason = extra.onSeason || null;
+      if (P.onSeason) { P.seasonSel.value = extra.season || 'all'; P.seasonRow.style.display = ''; } else P.seasonRow.style.display = 'none';
       if (!pts || !pts.length) { P.chart.appendChild(el('div', 'pv-err', 'No time series data available.')); return; }
       drawMain(); P.custom.style.display = ''; P.addTrend.disabled = false; P.calc.disabled = false;
     };
@@ -999,7 +1005,7 @@ window.MM = (function () {
     inSelection: inSelection, selectionPools: selectionPools, selectionDitches: selectionDitches, selectionScenes: selectionScenes, selectionUnits: selectionUnits, drawHighlight: drawHighlight, exitTool: exitTool, showLanding: showLanding, showAreaSelection: showAreaSelection,
     removeLayer: removeLayer, addToolLayer: addToolLayer, removeToolLayer: removeToolLayer, clearToolLayers: clearToolLayers, clearAllLayers: clearAllLayers,
     armDraw: armDraw, stopDraw: stopDraw, isDrawing: isDrawing, setClickHandler: setClickHandler, addSwitcher: addSwitcher, removeSwitcher: removeSwitcher,
-    linearFit: linearFit, xy: xy, fitSeries: fitSeries, percentile: percentile, nearestRank: nearestRank, rampColor: rampColor, hexToRgb: hexToRgb, seasonFilter: seasonFilter, dayPts: dayPts,
+    linearFit: linearFit, xy: xy, fitSeries: fitSeries, percentile: percentile, nearestRank: nearestRank, rampColor: rampColor, hexToRgb: hexToRgb, seasonFilter: seasonFilter, seasonFilterKey: seasonFilterKey, dayPts: dayPts,
     trendDataset: trendDataset, scatterDs: scatterDs, drawChart: drawChart, caption: caption, seriesPanel: seriesPanel, legendBlock: legendBlock, mapLegend: mapLegend, imageryCatalog: imageryCatalog, setBasemap: setBasemap, startMeasure: startMeasure, busy: busy, listservDialog: listservDialog,
     cubeReady: cubeReady, cubeAvailable: cubeAvailable, cube: cube, CUBES: CUBES, pkey: pkey, platName: platName, loadBlock: loadBlock, cubeLocate: cubeLocate, cubeLocateUtm: cubeLocateUtm, pixelSeries: pixelSeries, pixelSeriesFromBlock: pixelSeriesFromBlock, meanSeries: meanSeries, pool: pool, gridMask: gridMask, cubePixelsInMask: cubePixelsInMask, selectionMask: selectionMask, bandIndex: bandIndex,
     POOL_DS: POOL_DS, POOL_PROVENANCE: POOL_PROVENANCE, poolDataset: poolDataset, poolSlopeProps: poolSlopeProps, poolSlopeOf: poolSlopeOf, poolStatsLine: poolStatsLine, poolSeriesPts: poolSeriesPts, seriesDir: seriesDir, enableSentinel2: enableSentinel2, loadServerRaster: loadServerRaster, loadSlopeRaster: loadSlopeRaster,

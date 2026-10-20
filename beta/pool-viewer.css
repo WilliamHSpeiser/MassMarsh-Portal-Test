@@ -116,7 +116,7 @@ html, body { height: 100%; margin: 0; }
 
 /* expandable charts (icon top-right of every chart; near full-window modal with a Download button) */
 .pv-chart-wrap { position: relative; }
-.pv-chart-expand { position: absolute; top: 2px; right: 2px; width: 22px; height: 22px; border: 0; background: rgba(255,255,255,0.85); color: #666; border-radius: 3px; padding: 3px; cursor: pointer; opacity: 0.75; z-index: 2; line-height: 0; }
+.pv-chart-expand, button.pv-chart-expand { position: absolute; top: 2px; right: 2px; width: 22px; height: 22px; border: 0 !important; background: transparent !important; box-shadow: none !important; color: #666; padding: 3px; cursor: pointer; opacity: 0.75; z-index: 2; line-height: 0; border-radius: 0; }
 .pv-chart-expand:hover { opacity: 1; color: #1a73e8; }
 .pv-chart-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.65); z-index: 7000; display: flex; align-items: center; justify-content: center; }
 .pv-chart-modal-box { position: relative; background: #fff; border-radius: 6px; width: 92vw; height: 90vh; max-width: 1700px; display: flex; flex-direction: column; padding: 36px 24px 14px; box-sizing: border-box; box-shadow: 0 8px 30px rgba(0,0,0,0.5); }
@@ -128,3 +128,10 @@ html, body { height: 100%; margin: 0; }
 .pv-chart-modal-foot button { font-size: 14px; padding: 6px 22px; }
 /* header search box (beta page header) */
 .mm-search .pv-search-dd { top: 38px; left: 0; width: 100%; min-width: 300px; }
+/* pool imagery swipe: side-title image menus */
+.pv-swipe { position: relative; }
+.pv-swipe-menu { position: absolute; z-index: 30; min-width: 150px; max-height: 92%; overflow: auto; background: rgba(255,255,255,0.86); border: 1px solid #999; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.3); font: 11px Roboto, sans-serif; color: #222; }
+.pv-swipe-menu-h { padding: 4px 8px; font-weight: bold; border-bottom: 1px solid #ccc; }
+.pv-swipe-item { padding: 3px 8px; cursor: pointer; white-space: nowrap; }
+.pv-swipe-item:hover { background: rgba(0,229,255,0.25); color: #006064; }
+.pv-swipe-item.sel { font-weight: bold; }
