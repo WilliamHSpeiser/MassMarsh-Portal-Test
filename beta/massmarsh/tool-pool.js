@@ -1,5 +1,5 @@
 /* Pool Viewer (portal): per-pool Landsat or Sentinel-2 MNDWI time series, trends, breakpoints and change points; mono and multi analysis.
- * Sentinel-2 plots marsh-referenced MNDWI by default (the quantity its trends are computed on); a checkbox switches to raw MNDWI.
+ * Sentinel-2 plots the marsh-referenced value (the quantity its trends are computed on); the label just says MNDWI.
  * Port of tools/pool-viewer.js onto the shared core (selection by marsh units, complexes or drawn shapes). Pools are
  * every flagship-inventory pool intersecting the selection, labelled with its geographic state (pid = inventory id).
  */
@@ -9,16 +9,16 @@
   var MAX_MULTI = 8, DEFAULT_RANGE = 0.03;
   var SEASONS = { summer: { key: 'summer', label: 'Summer (Jun-Aug)', scenesWord: 'summer (Jun-Aug) scenes', chartWord: 'summer Jun-Aug scenes', props: { sl: 'sl', t: 't', sig: 'sig', n: 'n', tr: 'tr' } },
                   all: { key: 'all', label: 'Entire year', scenesWord: 'all-season scenes', chartWord: 'all scenes', props: { sl: 'sly', t: 'ty', sig: 'sigy', n: 'ny', tr: 'try' } } };
-  var P = { season: SEASONS.summer, gids: null, scenes: null, colorMin: -DEFAULT_RANGE, colorMax: DEFAULT_RANGE, panel: null, loading: false, reqId: 0, multi: [], multiNext: 1, filter: { start: null, end: null }, raw: false, last: null, onRawChange: null };
+  var P = { season: SEASONS.summer, gids: null, scenes: null, colorMin: -DEFAULT_RANGE, colorMax: DEFAULT_RANGE, panel: null, loading: false, reqId: 0, multi: [], multiNext: 1, filter: { start: null, end: null }, last: null };
   var ui = {};
   function prop(name) { return MM.poolSlopeProps(S.opts.satellite, P.season.key)[name]; }     // stored slope fields of the active satellite / season
   function s2() { return S.opts.satellite === 'Sentinel-2'; }
   function satLabel() { return s2() ? 'Sentinel-2' : 'Landsat'; }
-  function valueLabel(pts) { return s2() && !P.raw && (!pts || pts.referenced !== false) ? 'marsh-referenced MNDWI' : 'MNDWI'; }
+  function valueLabel(pts) { return 'MNDWI'; }
   function slopeOf(p) { var v = p[prop('sl')]; return (v === null || v === undefined) ? null : v; }
   function clearTool() { MM.clearToolLayers(); MM.stopDraw(); MM.setClickHandler(null); P.loading = false; P.reqId++; P.multi = []; P.multiNext = 1; P.panel = null; }
   function chartSeason() { return P.chartSeason || P.season.key; }      // scenes shown in the mono chart (the panel's selector; defaults to the settings choice)
-  function seriesPoints(raw) { var pts = MM.poolSeriesPts(raw, S.opts.satellite, P.raw); var out = MM.seasonFilterKey(pts, chartSeason()); out.referenced = pts.referenced; return out; }
+  function seriesPoints(raw) { var pts = MM.poolSeriesPts(raw, S.opts.satellite, false); var out = MM.seasonFilterKey(pts, chartSeason()); out.referenced = pts.referenced; return out; }
 
   // ---------- Step 2 / 3 ----------
   function showAnalysisChoice() {
@@ -68,11 +68,6 @@
   function header(modeLabel) {
     ui = {}; MM.clearSide(); MM.titlePanel('Pool Viewer'); MM.addSwitcher('pool_viewer');
     add(el('div', 'pv-h', modeLabel)); add(el('div', 'pv-small', 'Satellite: ' + S.opts.satellite + ' | Index: MNDWI | Season: ' + P.season.label));
-    if (s2()) {                                               // the Sentinel-2 trends are marsh-referenced; raw MNDWI is available for comparison
-      var rc = add(el('label', 'pv-check')); ui.raw = el('input'); ui.raw.type = 'checkbox'; ui.raw.checked = !!P.raw; rc.appendChild(ui.raw); rc.appendChild(document.createTextNode('Plot raw MNDWI instead of marsh-referenced MNDWI'));
-      var rn = add(el('div', 'pv-note', 'Sentinel-2 values are marsh-referenced: the pool-mean MNDWI minus the same-scene median MNDWI of the surrounding marsh. The harmonized Level-2A collection only undoes the January 2022 radiometric offset; reflectance still shifts between Sen2Cor processing versions, and referencing each scene to its own marsh cancels those shifts. The Sentinel-2 trends are computed on this value; tick "raw MNDWI" to see the unreferenced values.')); rn.style.color = '#888';
-      ui.raw.addEventListener('change', function () { P.raw = ui.raw.checked; if (P.onRawChange) P.onRawChange(); });
-    }
     thin('navy'); MM.slider('Pool Layer Opacity:', setOpacity);
     ui.status = add(el('div')); setStatus(ui.status, 'Loading pools...', '#888', true);
   }
@@ -93,7 +88,7 @@
     thin('light');
     add(button('← Change Satellite/Index', function () { S.step = 3; showSettings('mono'); }));
     MM.backButton(MM.showLanding);
-    P.last = null; P.onRawChange = function () { if (P.last && !P.loading) monoClick(P.last.f, P.last.latlng); };
+    P.last = null;
     loadPools(monoClick);
   }
   function monoClick(f, latlng) {
@@ -105,7 +100,6 @@
       var fit = MM.fitSeries(pts);
       var info = [el('div', 'pv-h lg', 'Pool Information'), el('div', 'pv-small', 'Lat: ' + latlng.lat.toFixed(5) + ', Lon: ' + latlng.lng.toFixed(5)),
         el('div', 'pv-h lg', 'Mean ' + valueLabel(pts) + ' Slope: ' + (fit.slope !== null && fit.slope !== undefined ? fit.slope.toFixed(6) + ' /year' : 'n/a')), el('div', 'pv-note', '(Least-squares trend of the pool-mean series' + (function () { var q = MM.poolSlopeProps(S.opts.satellite, chartSeason()); var t = p[q.t]; return (t !== null && t !== undefined) ? '; t = ' + Number(t).toFixed(2) + (Math.abs(t) >= 2 ? ', significant' : ', not significant') : ''; })() + ')'), el('div', 'pv-small', 'Valid observations: ' + pts.length)];
-      if (s2() && !P.raw && pts.referenced === false && pts.length) { var rw = el('div', 'pv-note', 'No marsh reference is available for this pool (series filled from the pixel cube); raw MNDWI is plotted.'); rw.style.color = '#e65100'; info.push(rw); }
       if (!pts.length) { P.panel.showError(info, 'No ' + SEASONS[chartSeason()].scenesWord + ' over this selection.'); return; }
       P.panel.setSeries(pts, info, P.scenes ? P.scenes[chartSeason() + (s2() ? '_s2' : '')] : null, { season: chartSeason(), lat: latlng.lat, onSeason: function (k) { P.chartSeason = k; if (P.last) monoClick(P.last.f, P.last.latlng); } });
       if (ui.swipe) MM.imagerySwipe(ui.swipe, { geometry: f.geometry, name: 'Pool ' + p.st + '-' + p.pid });
@@ -127,7 +121,6 @@
     thin(); ui.legend = add(el('div')); thin('light');
     add(button('← Change Satellite/Index', function () { S.step = 3; showSettings('multi'); }));
     MM.backButton(MM.showLanding);
-    P.onRawChange = function () { P.multi.forEach(function (m) { if (m.raw) { m.pts = seriesPoints(m.raw); m.fit = MM.fitSeries(m.pts); } }); renderList(); renderChart(); };
     renderList(); renderChart(); loadPools(multiClick);
   }
   function filterLabel(text, color, italic) { ui.filterLabel.textContent = text; ui.filterLabel.style.cssText = 'font-size:10px;color:' + color + (italic ? ';font-style:italic' : ''); }

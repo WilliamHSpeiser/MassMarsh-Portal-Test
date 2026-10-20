@@ -66,7 +66,7 @@
     ui.polySel = add(MM.select(['None', 'Show Marsh Units', 'Show Pools', 'Show Ditches'], 'None', '200px'));
     var note = add(el('div', 'pv-note')); note.style.fontStyle = 'italic';
     var PD = MM.poolDataset();
-    if (S.opts.index === 'MNDWI') { note.textContent = 'Pools: coloured by ' + PD.label + '. Pool charts use summer (Jun-Aug) scenes only' + (PD.referenced ? ' and plot marsh-referenced MNDWI (pool mean minus the same-scene marsh median)' : '') + '; marsh units and ditches use all scenes.'; note.style.color = '#888'; }
+    if (S.opts.index === 'MNDWI') { note.textContent = 'Pools: coloured by ' + PD.label + '. Pool charts use summer (Jun-Aug) scenes only' + '; marsh units and ditches use all scenes.'; note.style.color = '#888'; }
     else { note.textContent = poolFallbackText(); note.style.color = '#e65100'; }
     ui.toggle = add(button('Toggle Polygon On', togglePolygons)); ui.toggle.disabled = true;
     ui.polySel.addEventListener('change', onPolygonTypeChange);
@@ -228,7 +228,7 @@
     }
     MM.addToolLayer('marker', L.geoJSON(f, { renderer: MM.canvas, interactive: false, style: { color: 'yellow', weight: 3, fillColor: '#FFFF00', fillOpacity: 0.25 } }));
     MM.withTimeout(featureSeries(f, isPool), 60000).then(function (res) {
-      var title = isPool ? 'Pool Mean ' + (res.referenced ? 'marsh-referenced ' : '') + S.opts.index + ' Time Series (' + S.opts.satellite + ', summer Jun-Aug scenes)' : featureType + ' Mean ' + S.opts.index + ' Time Series (' + S.opts.satellite + ')';
+      var title = isPool ? 'Pool Mean ' + S.opts.index + ' Time Series (' + S.opts.satellite + ', summer Jun-Aug scenes)' : featureType + ' Mean ' + S.opts.index + ' Time Series (' + S.opts.satellite + ')';
       finishSeries(req, res.pts, info, title, { type: 'feature', prefix: featureType + ' Mean ', isPool: isPool }); })
       .catch(function (e) { if (req !== C.reqId) return; C.loading = false; ui.chart.innerHTML = ''; ui.chart.appendChild(el('div', 'pv-err', 'Error loading time series: ' + e.message)); });
   }
