@@ -253,10 +253,11 @@
     MM.addToolLayer('custom', new GeoRasterLayer({ georaster: g, opacity: ui.opacity ? parseFloat(ui.opacity.value) : 1, resolution: 256, mask: S.selection.maskGeometry, mask_strategy: 'outside', pixelValuesToColorFn: function (px) { var v = px[0]; if (v === null || v === undefined || !isFinite(v) || v === g.noDataValue) return null; return MM.rampColor(v, pal, mn, mx); } }));
     swatchLegend(ui.legend, pal, mn, mx);
   }
-  function swatchLegend(container, pal, mn, mx) {
-    container.innerHTML = ''; container.appendChild(el('div', 'pv-h', 'Legend:'));
-    var sw = el('div', 'pv-swatches'); pal.forEach(function (c) { var s = el('span'); s.style.background = c; sw.appendChild(s); }); container.appendChild(sw);
-    var l = el('div', 'pv-swatch-labels'); l.style.width = (pal.length * 20) + 'px'; l.appendChild(el('span', '', mn.toFixed(4))); l.appendChild(el('span', '', '0')); l.appendChild(el('span', '', mx.toFixed(4))); container.appendChild(l);
+  function swatchLegend(container, pal, mn, mx) {           // drawn on the map (lower left), the panel container stays empty
+    if (container) container.innerHTML = ''; var box = el('div'); box.appendChild(el('div', 'pv-h', 'Legend:'));
+    var sw = el('div', 'pv-swatches'); pal.forEach(function (c) { var s = el('span'); s.style.background = c; sw.appendChild(s); }); box.appendChild(sw);
+    var l = el('div', 'pv-swatch-labels'); l.style.width = (pal.length * 20) + 'px'; l.appendChild(el('span', '', mn.toFixed(4))); l.appendChild(el('span', '', '0')); l.appendChild(el('span', '', mx.toFixed(4))); box.appendChild(l);
+    MM.mapLegend(box);
   }
   // nearest-neighbour resample of the UTM statistic grid (30 m Landsat / 20 m Sentinel-2) onto an EPSG:4326 grid at the matching degree pixel (as the GEE download did)
   var PX30 = 0.00026949458523585604;

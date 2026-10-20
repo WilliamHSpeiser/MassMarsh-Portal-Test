@@ -96,7 +96,7 @@
     loadPools(monoClick);
   }
   function monoClick(f, latlng) {
-    if (P.loading) return; P.loading = true; var req = ++P.reqId; var p = f.properties;
+    if (MM.busy(P) || MM.isDrawing()) return; P.loading = true; P.loadingSince = Date.now(); var req = ++P.reqId; var p = f.properties;
     ui.prompt.style.display = 'none'; P.panel.setLoading('Loading pool time series...');
     MM.withTimeout(MM.loadPoolSeries(p.pid), 30000).then(function (raw) {
       if (req !== P.reqId) return; P.loading = false; var pts = seriesPoints(raw); P.last = { f: f, latlng: latlng, pts: pts };
@@ -131,14 +131,14 @@
   }
   function filterLabel(text, color, italic) { ui.filterLabel.textContent = text; ui.filterLabel.style.cssText = 'font-size:10px;color:' + color + (italic ? ';font-style:italic' : ''); }
   function multiClick(f) {
-    if (P.loading) return;
+    if (MM.busy(P) || MM.isDrawing()) return;
     if (P.multi.length >= MAX_MULTI) return setStatus(ui.status, 'Maximum of ' + MAX_MULTI + ' pools; remove one to add another.', '#c00');
     var p = f.properties; var key = 'pool:' + p.pid;
     if (P.multi.some(function (m) { return m.key === key; })) return setStatus(ui.status, poolName(p) + ' is already selected.', '#c00');
     var id = P.multiNext++; var color = MM.MULTI_COLORS[(id - 1) % MM.MULTI_COLORS.length];
     var entry = { id: id, key: key, color: color, title: 'Pool ' + id, props: p, loading: true, pts: null, fit: null };
     MM.addToolLayer(key, L.geoJSON(f, { renderer: MM.canvas, interactive: false, style: { color: color, weight: 3, fillColor: color, fillOpacity: 0.375 } }));
-    P.multi.push(entry); P.loading = true; renderList(); renderChart();
+    P.multi.push(entry); P.loading = true; P.loadingSince = Date.now(); renderList(); renderChart();
     MM.withTimeout(MM.loadPoolSeries(p.pid), 30000).then(function (raw) {
       P.loading = false; entry.loading = false; entry.raw = raw; entry.pts = seriesPoints(raw);
       if (!entry.pts.length) { removeMulti(entry); return setStatus(ui.status, 'No ' + P.season.scenesWord + ' over this selection.', '#c00'); }

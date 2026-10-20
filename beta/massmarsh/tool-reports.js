@@ -271,12 +271,29 @@
 
   // ---------- report generation ----------
   function progressPanel(title) { MM.clearSide(); MM.titlePanel('Remote Sensing Portal'); add(el('div', 'pv-h lg', title)); var log = add(el('div')); return function (msg, err) { var d = el('div', 'pv-small', msg); if (err) d.style.color = '#c00'; log.appendChild(d); }; }
+  // the report document is rendered to a PDF in the browser (jsPDF + html2canvas); the HTML version stays available as a secondary link
   function deliver(html, filename, title) {
     MM.clearSide(); MM.titlePanel('Remote Sensing Portal'); var ok = add(el('div', '', 'Report Generated!')); ok.style.cssText = 'font-size:16px;font-weight:bold;color:green'; var d = add(el('div', 'pv-thin')); d.style.background = '#881c1c';
-    add(el('div', 'pv-h lg', 'To Download Report:')); add(el('div', 'pv-small', '1. Click the link below (or right-click and choose "Save Link As")')); add(el('div', 'pv-small', '2. Save the file as .html to your computer'));
-    var url = URL.createObjectURL(new Blob([html], { type: 'text/html' })); var a = el('a', 'dl', '⬇ Download ' + filename); a.href = url; a.download = filename; a.style.display = 'block'; add(a);
-    thin(); add(el('div', 'pv-note', 'Map images are embedded in the file; it can be saved and shared.'));
+    add(el('div', 'pv-h lg', 'To Download Report:')); var st = add(el('div', 'pv-small', 'Preparing the PDF (this takes a few seconds for long reports)...')); st.style.color = '#b45f06';
+    var links = add(el('div')); var pdfName = filename.replace(/\.html?$/i, '') + '.pdf';
+    thin(); add(el('div', 'pv-note', 'Map images and charts are embedded in the file; it can be saved and shared.'));
     thin('light'); MM.backButton(MM.showLanding);
+    function htmlLink(label) { var a = el('a', 'dl', label); a.href = URL.createObjectURL(new Blob([html], { type: 'text/html' })); a.download = filename; a.style.cssText = 'display:block;font-size:12px'; links.appendChild(a); }
+    if (typeof jspdf === 'undefined' || typeof html2canvas === 'undefined') { st.textContent = 'PDF conversion is not available on this page; the HTML report is below.'; htmlLink('\u2b07 Download ' + filename); return; }
+    var holder = el('div'); holder.style.cssText = 'position:fixed;left:-10000px;top:0;width:900px;background:#fff;color:#333';
+    var body = html.replace(/^[\s\S]*?<body[^>]*>/i, '').replace(/<\/body>[\s\S]*$/i, ''); var css = (html.match(/<style>([\s\S]*?)<\/style>/i) || [])[1] || '';
+    holder.innerHTML = '<style>' + css.replace(/body\s*\{[^}]*\}/, '') + '</style>' + body; document.body.appendChild(holder);
+    setTimeout(function () {
+      try {
+        var doc = new jspdf.jsPDF({ unit: 'pt', format: 'letter', compress: true });
+        doc.html(holder, { x: 24, y: 24, width: 564, windowWidth: 900, autoPaging: 'text', margin: [24, 24, 24, 24], html2canvas: { scale: 564 / 900, useCORS: true, logging: false },
+          callback: function (pdf) {
+            if (holder.parentNode) holder.parentNode.removeChild(holder);
+            var url = URL.createObjectURL(pdf.output('blob')); st.textContent = 'Click the link below (or right-click and choose "Save Link As").'; st.style.color = '';
+            var a = el('a', 'dl', '\u2b07 Download ' + pdfName); a.href = url; a.download = pdfName; a.style.display = 'block'; links.appendChild(a); htmlLink('HTML version: ' + filename);
+          } });
+      } catch (e) { if (holder.parentNode) holder.parentNode.removeChild(holder); st.textContent = 'PDF conversion failed (' + e.message + '); the HTML report is below.'; st.style.color = '#c00'; htmlLink('\u2b07 Download ' + filename); }
+    }, 50);
   }
   function reportFrame(title, w) {
     return '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + title + '</title><style>body{font-family:Arial,sans-serif;max-width:900px;margin:0 auto;padding:20px;color:#333}h1{color:#881c1c;border-bottom:3px solid #881c1c;padding-bottom:10px}h2{color:#333;border-bottom:1px solid #999;padding-bottom:5px;margin-top:30px}h3{color:#555}.header{text-align:center;margin-bottom:30px}.stats-table{width:100%;border-collapse:collapse;margin:15px 0}.stats-table th,.stats-table td{border:1px solid #ddd;padding:10px;text-align:left}.stats-table th{background:#f5f5f5}.map-container img{max-width:100%;border:1px solid #ddd;border-radius:4px}.legend-bar{width:200px;height:20px;background:linear-gradient(to right,' + w.grad + ')}.legend-bar-pool{width:200px;height:20px;background:linear-gradient(to right,' + POOL_D.grad + ')}.legend-labels{width:200px;display:flex;justify-content:space-between;font-size:10px}.positive{color:' + w.repPos + '}.negative{color:' + w.repNeg + '}.footer{margin-top:40px;padding-top:20px;border-top:1px solid #ddd;font-size:11px;color:#666;text-align:center}@media print{body{max-width:none}.map-container{page-break-inside:avoid}}</style></head><body>';
@@ -555,7 +572,6 @@
         if (cites.length) h += '<h2>Citations</h2><div style="font-size:11px;color:#555;line-height:1.6">' + cites.join('') + '</div>';
         h += footer(' - Comprehensive Report');
         deliver(h, 'MassMarsh_Comprehensive_Report.html');
-        var hint = el('div'); hint.style.cssText = 'font-size:11px;color:#666;margin:6px 0'; hint.innerHTML = '<b>Save as PDF:</b> open the downloaded file and print it (Ctrl+P / Cmd+P) choosing "Save as PDF".'; MM.side.insertBefore(hint, MM.side.lastChild);
       });
     }).catch(function (e) { st.textContent = 'ERROR: ' + e.message; st.style.color = '#c00'; MM.backButton(MM.showLanding); });
   }

@@ -152,7 +152,7 @@
     removeFeatures();
     C.featureLayer = MM.addToolLayer('features', L.geoJSON({ type: 'FeatureCollection', features: feats }, { renderer: MM.canvas,
       style: function (f) { var st = styleFn(f); return st || { color: '#000', weight: 0, opacity: 0, fill: true, fillOpacity: 0 }; },
-      onEachFeature: function (f, lyr) { lyr.on('click', function (e) { L.DomEvent.stop(e); if (MM.isDrawing() || C.loading) return; showFeature(f, featureType); }); } }));
+      onEachFeature: function (f, lyr) { lyr.on('click', function (e) { L.DomEvent.stop(e); if (MM.isDrawing() || MM.busy(C)) return; showFeature(f, featureType); }); } }));
     C.polysOn = true; ui.toggle.textContent = 'Toggle Polygon Off';
   }
 
@@ -175,11 +175,11 @@
 
   // ---------- clicks ----------
   function mapClick(e) {
-    if (S.step !== 3 || !C.georaster || C.loading) return; ui.coordInfo.textContent = ''; ui.showTs.disabled = true;
+    if (S.step !== 3 || !C.georaster || MM.busy(C)) return; ui.coordInfo.textContent = ''; ui.showTs.disabled = true;
     if (!MM.inSelection(e.latlng.lng, e.latlng.lat)) { setStatus(ui.status, 'Click inside the selected marsh (yellow outline).', '#c00'); return; }
     showPixel(e.latlng);
   }
-  function beginSeries(label) { C.loading = true; C.series = null; ui.info.innerHTML = ''; ui.chart.innerHTML = ''; ui.trendInfo.innerHTML = ''; ui.addTrend.disabled = true; ui.clearTrend.disabled = true; ui.csv.disabled = true; if (label) ui.info.appendChild(el('div', 'pv-grey', label)); return ++C.reqId; }
+  function beginSeries(label) { C.loading = true; C.loadingSince = Date.now(); C.series = null; ui.info.innerHTML = ''; ui.chart.innerHTML = ''; ui.trendInfo.innerHTML = ''; ui.addTrend.disabled = true; ui.clearTrend.disabled = true; ui.csv.disabled = true; if (label) ui.info.appendChild(el('div', 'pv-grey', label)); return ++C.reqId; }
   function finishSeries(req, pts, infoNodes, title, state) {
     if (req !== C.reqId) return; C.loading = false; ui.info.innerHTML = ''; infoNodes.forEach(function (n) { ui.info.appendChild(n); }); ui.chart.innerHTML = '';
     if (!pts || !pts.length) { ui.chart.appendChild(el('div', 'pv-err', state && state.isPool ? 'No summer ' + S.opts.satellite + ' scenes for this pool.' : 'No time series data available.')); return; }

@@ -71,3 +71,32 @@ html, body { height: 100%; margin: 0; }
 
 .leaflet-container { font-family: Roboto, Arial, sans-serif; }
 .pv-tool-switch { background: rgba(255,255,255,0.5); font: 11px Roboto, sans-serif; padding: 2px; border-radius: 3px; }
+
+/* --- 2026-10-20: switcher, tooltip info icons, map legend overlay, map tools (measure / basemap), listserv dialog --- */
+.pv-tool-switch { background: rgba(255,255,255,0.8); font: bold 13px Roboto, sans-serif; padding: 5px 6px; border-radius: 4px; border: 1px solid #bbb; }
+.pv-info-i { display: inline-flex; width: 16px; height: 16px; flex: none; border-radius: 50%; border: 1.5px solid #9aa3ad; color: #9aa3ad; font: bold 11px Georgia, serif; font-style: italic; line-height: 1; align-items: center; justify-content: center; cursor: help; position: relative; }
+.pv-info-i:hover, .pv-info-i:focus { border-color: #00bcd4; color: #00bcd4; outline: none; }
+.pv-info-i .pv-tip { display: none; position: absolute; left: 22px; top: -8px; z-index: 60; width: 320px; max-width: 60vw; background: #fff; border: 1px solid #cfd8dc; box-shadow: 0 2px 8px rgba(0,0,0,0.25); padding: 8px 10px; border-radius: 4px; font: normal 12px Roboto, sans-serif; font-style: normal; color: #333; white-space: pre-wrap; text-align: left; cursor: default; }
+.pv-info-i:hover .pv-tip, .pv-info-i:focus .pv-tip { display: block; }
+.pv-map-legend { position: absolute; left: 10px; bottom: 26px; z-index: 800; background: rgba(255,255,255,0.85); padding: 6px 10px; border-radius: 4px; box-shadow: 0 1px 4px rgba(0,0,0,0.3); pointer-events: none; font: 12px Roboto, sans-serif; }
+.pv-map-legend .pv-h { margin: 0 0 4px 0; }
+.pv-maptool { position: relative; }
+.pv-maptool-btn { width: 34px; height: 34px; border: 1px solid #bbb; border-radius: 4px; background: rgba(255,255,255,0.75); color: #333; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; }
+.pv-maptool-btn:hover { background: rgba(255,255,255,0.95); color: #00838f; }
+.pv-maptool-dd { position: absolute; right: 0; top: 36px; min-width: 250px; background: #fff; border: 1px solid #bbb; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.25); padding: 4px 0; z-index: 1100; max-height: 60vh; overflow: auto; }
+.pv-maptool-item { display: flex; align-items: center; gap: 8px; padding: 6px 10px; font: 12px Roboto, sans-serif; color: #333; cursor: pointer; white-space: nowrap; }
+.pv-maptool-item:hover { background: #e0f7fa; }
+.pv-maptool-item.active { font-weight: bold; color: #00838f; }
+.pv-maptool-item svg { width: 18px; height: 18px; flex: none; }
+.pv-maptool-note { padding: 6px 10px; font: italic 11px Roboto, sans-serif; color: #777; }
+.pv-measure-tip { background: rgba(255,255,255,0.92); border: 1px solid #ff3d00; color: #333; font: bold 12px Roboto, sans-serif; }
+.pv-measure-result { background: rgba(255,255,255,0.92); border: 1px solid #ff3d00; color: #b71c1c; font: bold 12px Roboto, sans-serif; white-space: nowrap; }
+.pv-links { margin: 6px 0 10px 0; font-size: 12px; }
+.pv-links a { color: #881c1c; margin-right: 14px; text-decoration: underline; }
+.pv-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 5000; display: flex; align-items: center; justify-content: center; }
+.pv-dialog { position: relative; background: #fff; border-radius: 10px; padding: 28px 24px 22px; width: min(420px, 90vw); box-shadow: 0 8px 30px rgba(0,0,0,0.3); font-family: Roboto, sans-serif; text-align: center; }
+.pv-dialog-x { position: absolute; right: 10px; top: 6px; border: none; background: none; font-size: 22px; color: #888; cursor: pointer; }
+.pv-dialog-h { font-size: 18px; font-weight: bold; color: #881c1c; margin-bottom: 8px; }
+.pv-dialog-input { width: 100%; padding: 8px 10px; margin: 12px 0 6px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; }
+.pv-dialog-btn { background: #881c1c; color: #fff; border: none; padding: 8px 22px; border-radius: 6px; font-size: 14px; cursor: pointer; }
+.pv-dialog-btn:disabled { opacity: 0.7; cursor: default; }

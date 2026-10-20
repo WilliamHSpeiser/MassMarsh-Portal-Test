@@ -88,7 +88,7 @@
     loadDitches(monoClick, false);
   }
   function monoClick(f, latlng) {
-    if (D.loading) return; D.loading = true; var req = ++D.reqId; ui.prompt.style.display = 'none'; D.panel.setLoading('Loading ditch time series...');
+    if (MM.busy(D) || MM.isDrawing()) return; D.loading = true; D.loadingSince = Date.now(); var req = ++D.reqId; ui.prompt.style.display = 'none'; D.panel.setLoading('Loading ditch time series...');
     MM.withTimeout(ditchSeries(f), 45000).then(function (res) {
       if (req !== D.reqId) return; D.loading = false;
       MM.addToolLayer('selected', L.geoJSON(f, { renderer: MM.canvas, interactive: false, style: { color: 'yellow', weight: 4 } }));
@@ -124,7 +124,7 @@
     var id = D.multiNext++; var color = MM.MULTI_COLORS[(id - 1) % MM.MULTI_COLORS.length]; var key = 'ditch:' + id;
     var entry = { id: id, key: key, color: color, title: 'Ditch ' + id, loading: true, pts: null, fit: null };
     MM.addToolLayer(key, L.geoJSON(f, { renderer: MM.canvas, interactive: false, style: { color: color, weight: 3 } }));
-    D.multi.push(entry); D.loading = true; renderList(); renderChart();
+    D.multi.push(entry); D.loading = true; D.loadingSince = Date.now(); renderList(); renderChart();
     MM.withTimeout(ditchSeries(f), 45000).then(function (res) {
       D.loading = false; entry.loading = false; entry.pts = res.pts; D.nImages = Math.max(D.nImages, res.nImages || 0);
       if (!entry.pts.length) { removeMulti(entry); return; }

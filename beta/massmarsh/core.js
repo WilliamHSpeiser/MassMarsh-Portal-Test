@@ -67,14 +67,14 @@ window.MM = (function () {
   // ---------- map ----------
   var map = L.map('map', { preferCanvas: true, zoomControl: true }).setView([41.7, -70.5], 9);
   L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Imagery: Esri, Maxar, Earthstar Geographics' }).addTo(map);
-  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, opacity: 0.9 }).addTo(map);
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, opacity: 0.9, zIndex: 5 }).addTo(map);
   var canvas = L.canvas({ padding: 0.5, tolerance: 5 });
   var layers = { base: null, selected: null, highlight: null, drawn: null, tool: {} };
   function removeLayer(k) { if (layers[k]) { map.removeLayer(layers[k]); layers[k] = null; } }
   function addToolLayer(name, lyr) { removeToolLayer(name); layers.tool[name] = lyr; lyr.addTo(map); if (layers.highlight) { layers.highlight.remove(); layers.highlight.addTo(map); } return lyr; }
   function removeToolLayer(name) { if (layers.tool[name]) { map.removeLayer(layers.tool[name]); delete layers.tool[name]; } }
   function clearToolLayers() { Object.keys(layers.tool).forEach(removeToolLayer); }
-  function clearAllLayers() { ['base', 'selected', 'highlight', 'drawn'].forEach(removeLayer); clearToolLayers(); stopDraw(); }
+  function clearAllLayers() { ['base', 'selected', 'highlight', 'drawn'].forEach(removeLayer); clearToolLayers(); stopDraw(); mapLegend(null); }
 
   // ---------- data ----------
   var cache = {};
@@ -98,7 +98,7 @@ window.MM = (function () {
       });
     });
   }
-  var DATA_VERSION = '20261020e';          // bumped when the repo data files change (server-side files are not versioned)
+  var DATA_VERSION = '20261020f';          // bumped when the repo data files change (server-side files are not versioned)
   function getJSON(url) { var u = url.indexOf(DATA_BASE) === 0 ? url + '?v=' + DATA_VERSION : url; return fetch(u).then(function (r) { if (!r.ok) throw new Error(r.status + ' ' + url); return r.json(); }); }
   function load(name) {
     if (name === 'pools') return loadPoolsFor(S.selection ? S.selection.bbox : [-71.3, 41.2, -69.9, 42.9]);
@@ -179,17 +179,16 @@ window.MM = (function () {
   var side = document.getElementById('pv-side');
   function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
   function add(n) { side.appendChild(n); return n; }
-  function clearSide() { side.innerHTML = ''; }
+  function clearSide() { side.innerHTML = ''; mapLegend(null); }
   function titlePanel(sub) { var t = el('div', 'pv-title'); t.appendChild(el('span', 'brand', 'MassMarsh:')); t.appendChild(el('span', 'sub', sub)); add(t); add(el('div', 'pv-divider')); }
   function thin(cls) { return add(el('div', 'pv-thin' + (cls ? ' ' + cls : ''))); }
   function button(label, cb, cls) { var b = el('button', cls || '', label); b.addEventListener('click', cb); return b; }
   function setStatus(e, text, color, italic) { e.textContent = text; e.style.color = color || '#666'; e.style.fontStyle = italic ? 'italic' : 'normal'; e.style.fontWeight = color === 'green' ? 'bold' : 'normal'; e.style.fontSize = '11px'; }
   function fmtDate(ms) { return new Date(ms).toISOString().slice(0, 10); }
   function todayStr() { return new Date().toISOString().slice(0, 10); }
-  function labelWithInfo(text, info) {                        // createLabelWithInfo: bold italic heading + blue (i) toggle
-    var wrap = el('div'); var row = el('div', 'pv-section', text); var b = el('button', 'pv-info-btn', 'ⓘ'); row.appendChild(b); wrap.appendChild(row);
-    var p = el('div', 'pv-info'); p.style.whiteSpace = 'pre-wrap'; p.textContent = info; wrap.appendChild(p);
-    b.addEventListener('click', function () { var open = p.classList.toggle('open'); b.textContent = open ? '✕' : 'ⓘ'; });
+  function labelWithInfo(text, info) {                        // heading followed by a circled i: hover (or focus) shows the explanation as a tooltip
+    var wrap = el('div'); var row = el('div', 'pv-section', text); var i = el('span', 'pv-info-i', 'i'); i.tabIndex = 0; i.setAttribute('role', 'note'); row.appendChild(i); wrap.appendChild(row);
+    var p = el('div', 'pv-tip'); p.textContent = info; i.appendChild(p);
     return add(wrap);
   }
   function citation(text) { thin('light'); var c = add(el('div', 'pv-credit', text)); c.style.color = '#888'; return c; }
@@ -287,7 +286,7 @@ window.MM = (function () {
   function stopDraw() {
     if (!draw) return;
     map.off('mousedown', draw.down); map.off('mousemove', draw.move); map.off('mouseup', draw.up); map.off('click', draw.click); map.off('dblclick', draw.dbl);
-    if (draw.rect) map.removeLayer(draw.rect); if (draw.line) map.removeLayer(draw.line); if (draw.pts) draw.pts.forEach(function (m) { map.removeLayer(m); });
+    if (draw.rect) map.removeLayer(draw.rect); if (draw.line) map.removeLayer(draw.line); if (draw.pts) draw.pts.forEach(function (m) { map.removeLayer(m); }); if (draw.tip && draw.tip._map) map.removeLayer(draw.tip);
     map.dragging.enable(); map.doubleClickZoom.enable(); map.getContainer().style.cursor = '';
     if (draw.btn) { draw.btn.classList.remove('armed'); draw.btn.textContent = draw.label; }
     draw = null;
@@ -335,7 +334,7 @@ window.MM = (function () {
       sel.value = '';
       sel.addEventListener('change', function () { var v = sel.value; if (!v || v === current) { sel.value = ''; return; } switchTo(v); });
       L.DomEvent.disableClickPropagation(sel); L.DomEvent.disableScrollPropagation(sel); return sel; } });
-    switcherCtl = new C({ position: 'topright' }).addTo(map);
+    switcherCtl = new C({ position: 'topright' }).addTo(map); placeMapTools();
   }
   function removeSwitcher() { if (switcherCtl) { map.removeControl(switcherCtl); switcherCtl = null; } }
   function switchTo(id) {
@@ -358,8 +357,6 @@ window.MM = (function () {
       toolButton(S.only); return;
     }
     titlePanel('Remote Sensing Portal');
-    var w = add(el('div', '', 'Welcome to the MassMarsh Remote Sensing Portal!')); w.style.cssText = 'font-size:14px;color:#333;font-style:italic;margin:0 0 5px 0';
-    thin('navy');
     var d = add(el('div', '', 'Choose one of the options below to access our suite of ready-made remote sensing reporting and analysis tools, or access geospatial data. When you select an option, you will see more information about it.')); d.style.cssText = 'font-size:12px;color:#333;margin:0 0 10px 0';
     add(el('div', 'pv-divider'));
     labelWithInfo('Report Generators', 'Compile a report with remote sensing information to summarize observations in a selected area and flag locations possibly requiring attention.\n\n• Marsh Assessment Report – Generate a report that summarizes feature selections and their remote sensing trajectory, or find areas that may warrant concern\n\n• Restoration Efficacy Report – Generate a report that documents the time series at selected locations within a marsh and, if desired, any changes from user-input dates (such as project implementation dates)\n\n• Comprehensive Report – Generate both above reports in the same place, on the same document');
@@ -373,6 +370,28 @@ window.MM = (function () {
     thin('light').style.margin = '30px 0 10px 0';
     add(el('div', 'pv-small', 'For comments or questions, please contact:'));
     var a = el('a', '', 'William Speiser (wspeiser@umass.edu)'); a.href = 'mailto:wspeiser@umass.edu'; a.style.cssText = 'font-size:11px;color:#14558f;display:block;margin:0 0 10px 0'; add(a);
+    var links = add(el('div', 'pv-links'));                   // the GEE app's footer links, plus the listserv sign-up of the massmarshviewer.com welcome page
+    [['MassMarsh Project', 'https://www.umass.edu/gloucester-marine-station/mass-marsh'], ['Suggestions/Comments', 'https://docs.google.com/forms/d/e/1FAIpQLSfoLWHQ_VGaEsFDJwWUgBhko1p_KR14kNTIKcrV0XWO3oK0Tg/viewform']].forEach(function (l) { var x = el('a', '', l[0]); x.href = l[1]; x.target = '_blank'; x.rel = 'noopener'; links.appendChild(x); });
+    var ls = el('a', '', 'Join Listserv'); ls.href = '#'; ls.addEventListener('click', function (e) { e.preventDefault(); listservDialog(); }); links.appendChild(ls);
+  }
+  var LISTSERV_ENDPOINT = 'https://script.google.com/macros/s/AKfycbyvbI2UL9hjuVKwt6e0KFdlqmZ7ICyBTCyTESwpjNXPFb2jR2bBjtjctYrd6kHSTwg-Og/exec';   // same Apps Script as the massmarshviewer.com pop-up
+  function listservDialog() {
+    var ov = el('div', 'pv-overlay'); var box = el('div', 'pv-dialog'); ov.appendChild(box);
+    var x = el('button', 'pv-dialog-x', '\u00d7'); x.setAttribute('aria-label', 'Close'); box.appendChild(x);
+    box.appendChild(el('div', 'pv-dialog-h', 'Join the Listserv')); box.appendChild(el('div', 'pv-small', 'Enter your email to receive MassMarsh Remote Sensing Portal updates and related content.'));
+    var inp = el('input', 'pv-dialog-input'); inp.type = 'email'; inp.placeholder = 'you@example.com'; inp.autocomplete = 'email'; box.appendChild(inp);
+    var msg = el('div', 'pv-small'); msg.style.minHeight = '16px'; box.appendChild(msg); var sub = button('Submit', submit, 'pv-dialog-btn'); box.appendChild(sub);
+    function close() { if (ov.parentNode) ov.parentNode.removeChild(ov); }
+    x.addEventListener('click', close); ov.addEventListener('click', function (e) { if (e.target === ov) close(); });
+    function submit() {
+      var em = inp.value.trim(); if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) { msg.textContent = 'Please enter a valid email address.'; msg.style.color = '#c00'; return; }
+      sub.disabled = true; sub.textContent = 'Adding\u2026';
+      fetch(LISTSERV_ENDPOINT, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ email: em }) })
+        .then(function () { msg.textContent = em + ' added!'; msg.style.color = '#2e7d32'; sub.textContent = '\u2713'; })
+        .catch(function () { msg.textContent = 'Something went wrong. Please try again.'; msg.style.color = '#c00'; sub.disabled = false; sub.textContent = 'Submit'; });
+    }
+    inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') submit(); });
+    document.body.appendChild(ov); inp.focus();
   }
   function toolButton(id) {
     var t = tools[id]; var b = add(button(t ? t.label : (TOOL_LABELS[id] || id), function () { startTool(id); }, 'wide'));
@@ -632,11 +651,117 @@ window.MM = (function () {
     }
     return P;
   }
-  function legendBlock(container, pal, mn, mx, labels, title) {   // 'Legend (slope/year)' gradient bar with min (label) / 0 / max (label)
-    container.innerHTML = ''; container.appendChild(el('div', 'pv-h', title || 'Legend (slope/year)'));
-    var bar = el('div', 'pv-legend-bar'); bar.style.background = 'linear-gradient(to right, ' + pal.join(', ') + ')'; container.appendChild(bar);
-    var l = el('div', 'pv-legend-labels'); l.appendChild(el('span', '', mn.toFixed(4) + (labels ? ' (' + labels[0] + ')' : ''))); l.appendChild(el('span', '', '0')); l.appendChild(el('span', '', mx.toFixed(4) + (labels ? ' (' + labels[1] + ')' : ''))); container.appendChild(l);
+  // legends sit on the map (lower left, translucent box) rather than in the side panel; the panel container passed by the tools stays empty
+  var legendBox = null;
+  function mapLegend(node) {
+    if (!legendBox) { legendBox = el('div', 'pv-map-legend'); map.getContainer().appendChild(legendBox); }
+    legendBox.innerHTML = ''; if (node) { legendBox.appendChild(node); legendBox.style.display = ''; } else legendBox.style.display = 'none';
   }
+  function legendBlock(container, pal, mn, mx, labels, title) {   // 'Legend (slope/year)' gradient bar with min (label) / 0 / max (label)
+    if (container) container.innerHTML = '';
+    var box = el('div'); box.appendChild(el('div', 'pv-h', title || 'Legend (slope/year)'));
+    var bar = el('div', 'pv-legend-bar'); bar.style.background = 'linear-gradient(to right, ' + pal.join(', ') + ')'; box.appendChild(bar);
+    var l = el('div', 'pv-legend-labels'); l.appendChild(el('span', '', mn.toFixed(4) + (labels ? ' (' + labels[0] + ')' : ''))); l.appendChild(el('span', '', '0')); l.appendChild(el('span', '', mx.toFixed(4) + (labels ? ' (' + labels[1] + ')' : ''))); box.appendChild(l);
+    mapLegend(box);
+  }
+
+  // ---------- map tools (top right, under the tool switcher): measuring and a historical-imagery basemap ----------
+  var ICONS = {
+    ruler: '<svg viewBox="0 0 24 24" width="20" height="20"><path d="M3 17L17 3l4 4L7 21z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M6.5 13.5l2 2M9.5 10.5l2 2M12.5 7.5l2 2" stroke="currentColor" stroke-width="2"/></svg>',
+    line: '<svg viewBox="0 0 24 24"><circle cx="5" cy="19" r="2.5" fill="currentColor"/><circle cx="19" cy="5" r="2.5" fill="currentColor"/><path d="M7 17L17 7" stroke="currentColor" stroke-width="2"/></svg>',
+    rect: '<svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" fill="none" stroke="currentColor" stroke-width="2"/></svg>',
+    poly: '<svg viewBox="0 0 24 24"><path d="M12 3l9 7-3 10H6L3 10z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="3" r="2" fill="currentColor"/><circle cx="21" cy="10" r="2" fill="currentColor"/><circle cx="18" cy="20" r="2" fill="currentColor"/><circle cx="6" cy="20" r="2" fill="currentColor"/><circle cx="3" cy="10" r="2" fill="currentColor"/></svg>',
+    pen: '<svg viewBox="0 0 24 24"><path d="M3 21l3.5-1L18 8.5 15.5 6 4 17.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M14 7.5l2.5 2.5" stroke="currentColor" stroke-width="2"/></svg>',
+    x: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.5"/></svg>',
+    layers: '<svg viewBox="0 0 24 24" width="20" height="20"><path d="M12 3l9 5-9 5-9-5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M3 13l9 5 9-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M3 17l9 5 9-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>'
+  };
+  var measureLayer = L.layerGroup().addTo(map);
+  function fmtLen(m) { return m >= 1000 ? (m / 1000).toFixed(2) + ' km' : m.toFixed(1) + ' m'; }
+  function fmtAreaM2(a) { return a >= 1e6 ? (a / 1e6).toFixed(3) + ' km\u00b2 (' + (a / 1e4).toFixed(1) + ' ha)' : a >= 1e4 ? (a / 1e4).toFixed(2) + ' ha (' + Math.round(a).toLocaleString() + ' m\u00b2)' : Math.round(a).toLocaleString() + ' m\u00b2'; }
+  function pathLengthM(lls) { var s = 0; for (var i = 1; i < lls.length; i++) s += lls[i - 1].distanceTo(lls[i]); return s; }
+  function ringAreaM2(lls) { if (lls.length < 3) return 0; var u = lls.map(function (p) { return toUtm(p.lng, p.lat); }); var a = 0; for (var i = 0; i < u.length; i++) { var j = (i + 1) % u.length; a += u[i][0] * u[j][1] - u[j][0] * u[i][1]; } return Math.abs(a) / 2; }
+  // kind: line | rectangle | polygon | freehand. A readout follows the cursor; double-click (or releasing the rectangle) finishes and leaves the
+  // measured shape with its value on the map until 'Clear measurements'. While measuring, feature clicks are suppressed (draw is set).
+  function startMeasure(kind) {
+    stopDraw(); var color = '#ff3d00';
+    draw = { shape: 'measure', verts: [], pts: [], label: '', btn: null, tip: L.tooltip({ permanent: true, direction: 'right', offset: [14, 0], className: 'pv-measure-tip' }) };
+    map.getContainer().style.cursor = 'crosshair';
+    function lls(extra) { var p = draw.verts.map(function (v) { return L.latLng(v[1], v[0]); }); return extra ? p.concat([extra]) : p; }
+    function readout(extra) { var p = lls(extra); if (kind === 'line') return 'Length: ' + fmtLen(pathLengthM(p)); if (p.length < 3) return 'Area: 0 m\u00b2'; return 'Area: ' + fmtAreaM2(ringAreaM2(p)) + (kind === 'rectangle' ? '' : '\nPerimeter: ' + fmtLen(pathLengthM(p.concat([p[0]])))); }
+    function shapeOf(p, final) { return kind === 'line' ? L.polyline(p, { color: color, weight: 3, dashArray: final ? null : '6 4' }) : L.polygon(p, { color: color, weight: 2, fillOpacity: 0.15, dashArray: final ? null : '6 4' }); }
+    function redraw(extra) { var p = lls(extra); if (draw.line) map.removeLayer(draw.line); draw.line = p.length ? shapeOf(p, false).addTo(map) : null; }
+    function tip(latlng, text) { draw.tip.setContent(text.replace(/\n/g, '<br>')); draw.tip.setLatLng(latlng); if (!draw.tip._map) draw.tip.addTo(map); }
+    function finish() {
+      var p = lls(); var text = readout(); stopDraw();
+      if ((kind === 'line' && p.length < 2) || (kind !== 'line' && p.length < 3)) return;
+      var lyr = shapeOf(p, true); lyr.bindTooltip(text.replace(/\n/g, '<br>'), { permanent: true, direction: 'center', className: 'pv-measure-result' }); measureLayer.addLayer(lyr);
+    }
+    if (kind === 'rectangle') {
+      map.dragging.disable();
+      draw.down = function (e) { draw.start = e.latlng; };
+      draw.move = function (e) { if (!draw.start) { tip(e.latlng, 'Drag a rectangle'); return; } var b = L.latLngBounds(draw.start, e.latlng); draw.verts = [[b.getWest(), b.getSouth()], [b.getEast(), b.getSouth()], [b.getEast(), b.getNorth()], [b.getWest(), b.getNorth()]]; redraw(); tip(e.latlng, readout()); };
+      draw.up = function () { if (draw.start) finish(); };
+      map.on('mousedown', draw.down); map.on('mousemove', draw.move); map.on('mouseup', draw.up);
+    } else {
+      map.doubleClickZoom.disable();
+      draw.move = function (e) {
+        if (kind === 'freehand' && draw.started) { draw.verts.push([e.latlng.lng, e.latlng.lat]); redraw(); tip(e.latlng, readout()); return; }
+        if (draw.verts.length) { if (kind !== 'freehand') redraw(e.latlng); tip(e.latlng, readout(kind === 'freehand' ? null : e.latlng)); }
+        else tip(e.latlng, kind === 'line' ? 'Click to start the line, double-click to finish' : kind === 'freehand' ? 'Click to start drawing, double-click to finish' : 'Click the vertices, double-click to finish');
+      };
+      draw.click = function (e) {
+        if (draw.lastMs && Date.now() - draw.lastMs < 350) return; draw.lastMs = Date.now();
+        if (kind === 'freehand') { draw.started = true; }
+        draw.verts.push([e.latlng.lng, e.latlng.lat]); if (kind !== 'freehand') draw.pts.push(L.circleMarker(e.latlng, { radius: 3, color: color, fillOpacity: 1 }).addTo(map)); redraw();
+      };
+      draw.dbl = function (e) { L.DomEvent.stop(e); finish(); };
+      map.on('mousemove', draw.move); map.on('click', draw.click); map.on('dblclick', draw.dbl);
+    }
+  }
+  var IMG_SOURCE = { MassGIS: 'MassGIS', NHAP: 'NHAP', CapeCod: 'Cape Cod', AutoGeoreferencer: 'Georeferenced aerials', NAIP: 'NAIP' };
+  var basemap = null, basemapLayer = null, catalogP = null, measureCtl = null, basemapCtl = null;
+  function imageryCatalog() { if (!catalogP) catalogP = serverReady.then(function () { return getJSON(serverUrl('imagery/catalog.json')); }).catch(function (e) { catalogP = null; throw e; }); return catalogP; }
+  function catYear(im) { var t = String(im.year), m = t.match(/(\d{4})/); return m ? +m[1] + (/\ds\b/.test(t) ? 5 : 0) : 9999; }
+  function areaBbox() { if (S.selection) return S.selection.bbox; var b = map.getBounds(); return [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]; }
+  function setBasemap(im) {
+    if (basemapLayer) { map.removeLayer(basemapLayer); basemapLayer = null; } basemap = im || null;
+    if (!im || typeof pmtiles === 'undefined') return;
+    basemapLayer = pmtiles.leafletRasterLayer(new pmtiles.PMTiles(serverUrl('imagery/' + im.file)), { maxNativeZoom: im.maxzoom || 18, maxZoom: 20, minZoom: im.minzoom || 8, zIndex: 2, attribution: IMG_SOURCE[im.source] || im.source }).addTo(map);
+  }
+  function closeMapTools() { var dds = document.querySelectorAll('.pv-maptool-dd'); for (var i = 0; i < dds.length; i++) dds[i].style.display = 'none'; }
+  function ddItem(dd, icon, label, cb, active) { var it = el('div', 'pv-maptool-item' + (active ? ' active' : '')); if (icon) it.innerHTML = icon; it.appendChild(el('span', '', label)); it.addEventListener('click', cb); dd.appendChild(it); return it; }
+  function mapToolControl(cls, icon, title, buildItems) {
+    var Ctl = L.Control.extend({ onAdd: function () {
+      var c = L.DomUtil.create('div', 'pv-maptool ' + cls); var b = L.DomUtil.create('button', 'pv-maptool-btn', c); b.innerHTML = icon; b.title = title; b.type = 'button';
+      var dd = L.DomUtil.create('div', 'pv-maptool-dd', c); dd.style.display = 'none';
+      b.addEventListener('click', function () { var open = dd.style.display !== 'none'; closeMapTools(); if (!open) { dd.innerHTML = ''; buildItems(dd, closeMapTools); dd.style.display = ''; } });
+      L.DomEvent.disableClickPropagation(c); L.DomEvent.disableScrollPropagation(c); return c; } });
+    return new Ctl({ position: 'topright' });
+  }
+  function measureItems(dd, close) {
+    ddItem(dd, ICONS.line, 'Measure a line (double-click to finish)', function () { close(); startMeasure('line'); });
+    ddItem(dd, ICONS.rect, 'Area of a rectangle (drag)', function () { close(); startMeasure('rectangle'); });
+    ddItem(dd, ICONS.poly, 'Area of a polygon (click vertices, double-click to finish)', function () { close(); startMeasure('polygon'); });
+    ddItem(dd, ICONS.pen, 'Area of a freehand shape (click, move, double-click to finish)', function () { close(); startMeasure('freehand'); });
+    ddItem(dd, ICONS.x, 'Clear measurements', function () { close(); measureLayer.clearLayers(); stopDraw(); });
+  }
+  function basemapItems(dd, close) {
+    ddItem(dd, null, 'Esri World Imagery (default)', function () { close(); setBasemap(null); }, !basemap);
+    var note = el('div', 'pv-maptool-note', 'Loading the imagery available for this area...'); dd.appendChild(note);
+    imageryCatalog().then(function (cat) {
+      note.remove(); var b = areaBbox();
+      var list = (cat.images || []).filter(function (im) { return im.footprint && bboxIntersects(featureBbox({ geometry: im.footprint }), b); }).sort(function (p, q) { return catYear(p) - catYear(q); });
+      if (!list.length) dd.appendChild(el('div', 'pv-maptool-note', 'No historical imagery covers this area.'));
+      list.forEach(function (im) { ddItem(dd, null, im.year + ' - ' + (IMG_SOURCE[im.source] || im.source) + ' (' + im.type + ')', function () { close(); setBasemap(im); }, !!(basemap && basemap.key === im.key)); });
+    }).catch(function () { note.textContent = 'The imagery catalog is not reachable.'; });
+  }
+  function placeMapTools() {
+    if (measureCtl) map.removeControl(measureCtl); if (basemapCtl) map.removeControl(basemapCtl);
+    measureCtl = mapToolControl('measure', ICONS.ruler, 'Measure distances and areas', measureItems).addTo(map);
+    if (typeof pmtiles !== 'undefined') basemapCtl = mapToolControl('basemap', ICONS.layers, 'Basemap: historical imagery available for this area', basemapItems).addTo(map);
+  }
+  map.on('click', closeMapTools);
+  function busy(st) { return !!st.loading && Date.now() - (st.loadingSince || 0) < 45000; }   // a stuck 'loading' flag must not block clicks forever
 
   // ---------- pixel-series cubes (MassMarsh servers): one per sensor, same block layout, different grids ----------
   var MAX_BLOCKS = 600;
@@ -777,7 +902,7 @@ window.MM = (function () {
   function boot(opts) {
     opts = opts || {}; S.only = opts.only || null;
     var want = (location.search.match(/[?&]tool=([a-z_]+)/) || [])[1];
-    showLanding();
+    showLanding(); placeMapTools();
     if (want && tools[want] && !S.only) startTool(want);
   }
   window.addEventListener('error', function (e) { side.appendChild(el('div', 'pv-err', 'Unexpected error: ' + (e.message || e.type) + ' (reload the page if the tool stops responding)')); });
@@ -793,7 +918,7 @@ window.MM = (function () {
     removeLayer: removeLayer, addToolLayer: addToolLayer, removeToolLayer: removeToolLayer, clearToolLayers: clearToolLayers, clearAllLayers: clearAllLayers,
     armDraw: armDraw, stopDraw: stopDraw, isDrawing: isDrawing, setClickHandler: setClickHandler, addSwitcher: addSwitcher, removeSwitcher: removeSwitcher,
     linearFit: linearFit, xy: xy, fitSeries: fitSeries, percentile: percentile, nearestRank: nearestRank, rampColor: rampColor, hexToRgb: hexToRgb, seasonFilter: seasonFilter, dayPts: dayPts,
-    trendDataset: trendDataset, scatterDs: scatterDs, drawChart: drawChart, caption: caption, seriesPanel: seriesPanel, legendBlock: legendBlock,
+    trendDataset: trendDataset, scatterDs: scatterDs, drawChart: drawChart, caption: caption, seriesPanel: seriesPanel, legendBlock: legendBlock, mapLegend: mapLegend, imageryCatalog: imageryCatalog, setBasemap: setBasemap, startMeasure: startMeasure, busy: busy, listservDialog: listservDialog,
     cubeReady: cubeReady, cubeAvailable: cubeAvailable, cube: cube, CUBES: CUBES, pkey: pkey, platName: platName, loadBlock: loadBlock, cubeLocate: cubeLocate, cubeLocateUtm: cubeLocateUtm, pixelSeries: pixelSeries, pixelSeriesFromBlock: pixelSeriesFromBlock, meanSeries: meanSeries, pool: pool, gridMask: gridMask, cubePixelsInMask: cubePixelsInMask, selectionMask: selectionMask, bandIndex: bandIndex,
     POOL_DS: POOL_DS, POOL_PROVENANCE: POOL_PROVENANCE, poolDataset: poolDataset, poolSlopeProps: poolSlopeProps, poolSlopeOf: poolSlopeOf, poolStatsLine: poolStatsLine, poolSeriesPts: poolSeriesPts, seriesDir: seriesDir, enableSentinel2: enableSentinel2, loadServerRaster: loadServerRaster, loadSlopeRaster: loadSlopeRaster,
     compareOn: compareOn, compareOff: compareOff
