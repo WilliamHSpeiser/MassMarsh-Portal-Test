@@ -273,7 +273,10 @@
   // the report is delivered as HTML plus the browser print view (PDF via "Save as PDF"), identical layouts
   // the PDF is the browser's own print rendering of the HTML report (identical layout), saved with "Save as PDF"
   var PRINT_CSS = '@page{size:letter;margin:12mm}@media print{body{max-width:none!important;padding:0!important}.map-container,table,svg,img,div[style*="page-break-inside"]{page-break-inside:avoid;break-inside:avoid}h1,h2,h3{page-break-after:avoid;break-after:avoid}img{max-width:100%!important}}';
-  function deliver(html, filename, title) {
+  // Downloaded file names: MassMarsh_[ReportType]_[MonYYYY]_[HHMM] (.html, and the print window title so "Save as PDF" suggests the same .pdf name)
+  function reportFileBase(kind) { var d = new Date(), mon = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getMonth()]; return 'MassMarsh_' + kind + '_' + mon + d.getFullYear() + '_' + ('0' + d.getHours()).slice(-2) + ('0' + d.getMinutes()).slice(-2); }
+  function deliver(html, kind) {
+    var base = reportFileBase(kind), filename = base + '.html', title = base;
     MM.clearSide(); MM.titlePanel('Remote Sensing Portal'); var ok = add(el('div', '', 'Report Generated!')); ok.style.cssText = 'font-size:16px;font-weight:bold;color:green'; var d = add(el('div', 'pv-thin')); d.style.background = '#881c1c';
     add(el('div', 'pv-h lg', 'Download Report')); var links = add(el('div')); var note = el('div', 'pv-note');
     var printable = html.replace('</style>', PRINT_CSS + '</style>');
@@ -281,7 +284,7 @@
     a.addEventListener('click', function (e) {
       e.preventDefault(); var w = window.open('', '_blank');
       if (!w) { note.textContent = 'Pop-up blocked: allow pop-ups for this site and click the PDF link again.'; note.style.color = '#c00'; return; }
-      w.document.open(); w.document.write(printable); w.document.close(); w.document.title = (title || 'MassMarsh Report');
+      w.document.open(); w.document.write(printable); w.document.close(); w.document.title = title;
       setTimeout(function () { try { w.focus(); w.print(); } catch (err) {} }, 900);
     });
     links.appendChild(a);
@@ -298,7 +301,7 @@
     var log = progressPanel('Generating report...');
     buildAssessmentBody(log).then(function (body) {
       var h = reportFrame('MassMarsh Assessment Report', words()) + '<div class="header"><h1>MassMarsh Assessment Report</h1>' + headerLines() + '</div>' + body + footer('');
-      deliver(h, 'MassMarsh_Report.html');
+      deliver(h, 'AssessmentReport');
     }).catch(function (e) { log('ERROR: ' + e.message, true); MM.backButton(MM.showLanding); });
   }
   function headerLines() { var fb = poolFallback(); return '<p>Generated: ' + new Date().toLocaleDateString() + '</p><p>Satellite: Landsat | Index: ' + S.opts.index + '</p>' + (A.opts.pools ? '<p style="font-size:11px;font-style:italic;color:#666">' + esc(fb || ('Pool statistics: ' + POOL_D.label + '. Pool charts use summer (Jun-Aug) scenes only.')) + '</p>' : ''); }
@@ -482,7 +485,7 @@
       h += '<div class="header"><h1>MassMarsh Restoration Efficacy Report</h1><p>Generated: ' + new Date().toLocaleDateString() + '</p><p>Satellite: Landsat | Index: ' + idx + (parts.anyPool ? ' | Pool time series: summer scenes only' : '') + '</p></div>' + parts.body;
       if (parts.anyPool || parts.hasDitches) h += '<h2>Data Sources and Citations</h2><div style="font-size:11px;color:#555;line-height:1.6">' + (parts.anyPool ? '<p><strong>Pools:</strong> ' + esc(POOL_D.provenance) + '</p>' : '') + (parts.hasDitches ? '<p><strong>Ditches:</strong> ' + CIT_DITCH + '</p>' : '') + '</div>';
       h += footer('');
-      deliver(h, 'MassMarsh_Restoration_Report.html');
+      deliver(h, 'RestorationEfficacyReport');
     }).catch(function (e) { st.textContent = 'ERROR: ' + e.message; st.style.color = '#c00'; MM.backButton(MM.showLanding); });
   }
   // per-site series, regressions and map chips; resolves to the results sorted by site id
@@ -566,7 +569,7 @@
         if (A.opts.ditches && ditchCount > 0) cites.push('<p><strong>Ditches:</strong> ' + CIT_DITCH + '</p>');
         if (cites.length) h += '<h2>Citations</h2><div style="font-size:11px;color:#555;line-height:1.6">' + cites.join('') + '</div>';
         h += footer(' - Comprehensive Report');
-        deliver(h, 'MassMarsh_Comprehensive_Report.html');
+        deliver(h, 'ComprehensiveReport');
       });
     }).catch(function (e) { st.textContent = 'ERROR: ' + e.message; st.style.color = '#c00'; MM.backButton(MM.showLanding); });
   }
