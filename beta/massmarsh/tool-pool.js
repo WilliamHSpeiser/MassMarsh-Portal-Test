@@ -70,7 +70,7 @@
     add(el('div', 'pv-h', modeLabel)); add(el('div', 'pv-small', 'Satellite: ' + S.opts.satellite + ' | Index: MNDWI | Season: ' + P.season.label));
     if (s2()) {                                               // the Sentinel-2 trends are marsh-referenced; raw MNDWI is available for comparison
       var rc = add(el('label', 'pv-check')); ui.raw = el('input'); ui.raw.type = 'checkbox'; ui.raw.checked = !!P.raw; rc.appendChild(ui.raw); rc.appendChild(document.createTextNode('Plot raw MNDWI instead of marsh-referenced MNDWI'));
-      var rn = add(el('div', 'pv-note', 'Sentinel-2 values are marsh-referenced: the pool-mean MNDWI minus the same-scene median MNDWI of the surrounding marsh. Sentinel-2 L2A reflectance shifted when ESA changed its processing baselines (a large step in January 2022), and referencing each scene to its own marsh cancels those steps. The Sentinel-2 trends are computed on this value; tick "raw MNDWI" to see the unreferenced values.')); rn.style.color = '#888';
+      var rn = add(el('div', 'pv-note', 'Sentinel-2 values are marsh-referenced: the pool-mean MNDWI minus the same-scene median MNDWI of the surrounding marsh. The harmonized Level-2A collection only undoes the January 2022 radiometric offset; reflectance still shifts between Sen2Cor processing versions, and referencing each scene to its own marsh cancels those shifts. The Sentinel-2 trends are computed on this value; tick "raw MNDWI" to see the unreferenced values.')); rn.style.color = '#888';
       ui.raw.addEventListener('change', function () { P.raw = ui.raw.checked; if (P.onRawChange) P.onRawChange(); });
     }
     thin('navy'); MM.slider('Pool Layer Opacity:', setOpacity);
