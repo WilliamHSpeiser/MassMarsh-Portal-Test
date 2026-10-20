@@ -185,7 +185,7 @@ window.MM = (function () {
   function clearSide() { side.innerHTML = ''; mapLegend(null); }
   function titlePanel(sub) { var t = el('div', 'pv-title'); t.appendChild(el('span', 'brand', 'MassMarsh:')); t.appendChild(el('span', 'sub', sub)); add(t); add(el('div', 'pv-divider')); }
   function thin(cls) { return add(el('div', 'pv-thin' + (cls ? ' ' + cls : ''))); }
-  function button(label, cb, cls) { var b = el('button', cls || ''); if (/^\u2190 /.test(label)) { var ar = el('span', 'pv-arrow', '\u2190'); b.appendChild(ar); b.appendChild(document.createTextNode(label.slice(1))); } else b.textContent = label; b.addEventListener('click', cb); return b; }
+  function button(label, cb, cls) { var b = el('button', cls || ''); if (/^\u2190 /.test(label)) { var ar = el('span', 'pv-arrow', '\u2190'); b.appendChild(ar); b.appendChild(document.createTextNode(label.slice(1))); } else if (/ \u2192$/.test(label)) { b.appendChild(document.createTextNode(label.slice(0, -1))); b.appendChild(el('span', 'pv-arrow pv-arrow-r', '\u2192')); } else b.textContent = label; b.addEventListener('click', cb); return b; }
   function setStatus(e, text, color, italic) { e.textContent = text; e.style.color = color || '#666'; e.style.fontStyle = italic ? 'italic' : 'normal'; e.style.fontWeight = color === 'green' ? 'bold' : 'normal'; e.style.fontSize = '11px'; }
   function fmtDate(ms) { return new Date(ms).toISOString().slice(0, 10); }
   function todayStr() { return new Date().toISOString().slice(0, 10); }
