@@ -18,6 +18,9 @@
     return hit / (n * n);
   }
   function labelOf(im) { return im.year + ' - ' + (SOURCE_LABELS[im.source] || im.source) + ' (' + im.type + ')'; }
+  // catalog years are strings ('1938-11-01', '1938_12_v1', '~1980s', '2025'): decimal year for ordering (a decade label counts as its middle)
+  function yearNum(im) { var t = String(im.year); var m = t.match(/(\d{4})(?:[-_](\d{1,2}))?(?:[-_](\d{1,2}))?/); if (!m) return NaN; var y = +m[1] + (m[2] ? (+m[2] - 1) / 12 : 0) + (m[3] ? (+m[3] - 1) / 365 : 0); if (!m[2] && /\ds\b/.test(t)) y += 5; return y; }
+  var DEFAULT_COVERAGE = 0.5;                                   // the default left/right images must cover at least half of the box (else any listed image)
 
   function enterCompare() {
     var sel = S.selection; var bounds = sel.bounds;
@@ -34,13 +37,17 @@
     H.boundary = L.geoJSON(g, { interactive: false, style: { color: 'cyan', weight: 2, fill: false } }).addTo(H.map2);
     catalogReady().then(function (cat) {
       var b = [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()];
-      var imgs = (cat.images || []).filter(function (im) { return coverage(im.footprint, b) >= MIN_COVERAGE_FRACTION; });
+      var cov = {}; (cat.images || []).forEach(function (im) { cov[im.key] = coverage(im.footprint, b); });
+      var imgs = (cat.images || []).filter(function (im) { return cov[im.key] >= MIN_COVERAGE_FRACTION; });
       imgs.sort(function (a, c) { var sa = SOURCE_ORDER.indexOf(a.source), sc = SOURCE_ORDER.indexOf(c.source); return sa !== sc ? sa - sc : String(a.year).localeCompare(String(c.year)); });
       H.available = imgs;
       document.getElementById('avail').textContent = imgs.length + ' image sets available for this area' + (cat.images && cat.images.length ? '' : ' (imagery archive not reachable)');
-      var byYear = imgs.slice().sort(function (a, c) { return String(a.year).localeCompare(String(c.year)); });
-      fillSelect('sel-left', imgs, byYear.length ? byYear[0].key : null); fillSelect('sel-right', imgs, byYear.length ? byYear[byYear.length - 1].key : null);
-      setLayer('left', byYear.length ? byYear[0] : null); setLayer('right', byYear.length ? byYear[byYear.length - 1] : null);
+      // defaults: oldest image on the left, newest on the right, among the images that cover most of the box
+      var well = imgs.filter(function (im) { return cov[im.key] >= DEFAULT_COVERAGE; }); var pool = well.length ? well : imgs;
+      var byYear = pool.filter(function (im) { return !isNaN(yearNum(im)); }).sort(function (a, c) { return yearNum(a) - yearNum(c); });
+      var oldest = byYear.length ? byYear[0] : null, newest = byYear.length ? byYear[byYear.length - 1] : null;
+      fillSelect('sel-left', imgs, oldest ? oldest.key : null); fillSelect('sel-right', imgs, newest ? newest.key : null);
+      setLayer('left', oldest); setLayer('right', newest);
     });
   }
   function exitCompare() { if (H.map2) { if (H.left) { H.map2.removeLayer(H.left); H.left = null; } if (H.right) { H.map2.removeLayer(H.right); H.right = null; } } MM.compareOff(); }

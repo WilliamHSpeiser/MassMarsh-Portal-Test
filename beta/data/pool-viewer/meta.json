@@ -1,5 +1,5 @@
 {
- "generated": "2026-10-20 14:01 UTC",
+ "generated": "2026-10-20 14:50 UTC",
  "pool_id": "pool_idx (flagship inventory row id)",
  "state": "geographic state (TIGER 2023), PoolPaper state fix 2026-10-20",
  "n_pools": 205760,
@@ -17,12 +17,10 @@
  },
  "n_complexes": 461,
  "series_tags": [
-  "MA",
-  "NH",
-  "RI",
-  "CT",
-  "ME",
-  "NY"
+  "DE",
+  "MD",
+  "NJ",
+  "VA"
  ],
  "shard_size": 100,
  "day_epoch": "1984-01-01",
