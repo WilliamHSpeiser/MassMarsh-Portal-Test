@@ -101,7 +101,7 @@ window.MM = (function () {
       });
     });
   }
-  var DATA_VERSION = '20261020g';          // bumped when the repo data files change (server-side files are not versioned)
+  var DATA_VERSION = '20261020h';          // bumped when the repo data files change (server-side files are not versioned)
   function getJSON(url) { var u = url.indexOf(DATA_BASE) === 0 ? url + '?v=' + DATA_VERSION : url; return fetch(u).then(function (r) { if (!r.ok) throw new Error(r.status + ' ' + url); return r.json(); }); }
   function load(name) {
     if (name === 'pools') return loadPoolsFor(S.selection ? S.selection.bbox : [-71.3, 41.2, -69.9, 42.9]);
