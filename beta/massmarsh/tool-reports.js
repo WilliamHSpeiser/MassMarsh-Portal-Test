@@ -144,7 +144,7 @@
     add(el('div', 'pv-h lg', 'Select Satellite and Index:'));
     var av = null; if (A.opts.pools) { av = add(el('div', 'pv-note')); av.style.cssText = 'color:#888;font-style:italic'; }
     add(el('div', 'pv-p', 'Satellite:')); add(MM.select([['Landsat (30m, 1984-Current)', 'Landsat'], ['Sentinel-2 (10m, 2015-Current)', 'Sentinel-2', true]], 'Landsat', '280px'));
-    add(el('div', 'pv-p', 'Index:')); var idxSel = add(MM.select([['Water Index (MNDWI)', 'MNDWI'], ['Water + Veg. Index (NDWI)', 'NDWI'], ['Vegetation Index (NDVI)', 'NDVI']], S.opts.index, '280px'));
+    add(el('div', 'pv-p', 'Index:')); var idxSel = add(MM.select([['Water Index (MNDWI)', 'MNDWI'], ['Vegetation Index (NDVI)', 'NDVI']], S.opts.index === 'NDVI' ? 'NDVI' : 'MNDWI', '280px'));   // reports are Landsat only: no NDWI
     function refresh() { S.opts.index = idxSel.value; if (av) { av.textContent = availabilityText(); Promise.all([MM.load('pools'), MM.selectionPools()]).then(function (r) { var n = r[1].filter(function (g) { var f = r[0].byPid[g]; return f && f.properties.sl !== null && f.properties.sl !== undefined; }).length; av.textContent = availabilityText() + ' ' + n + ' pool' + (n === 1 ? ' in this selection has' : 's in this selection have') + ' a Landsat MNDWI slope; the report will highlight at most ' + n + '.'; }); } }
     idxSel.addEventListener('change', refresh); refresh();
     thin(); var ap = add(button('Apply', function () { S.step = 4; showStatistics(); })); ap.style.width = '100px';
@@ -392,7 +392,7 @@
     rui = {}; MM.clearToolLayers(); MM.stopDraw(); MM.setClickHandler(null); clearSites(); MM.clearSide(); MM.titlePanel('Restoration Efficacy Report'); S.step = 2;
     add(el('div', 'pv-h lg', 'Step 2: Select Satellite & Index'));
     add(el('div', 'pv-p', 'Satellite:')); add(MM.select([['Landsat (30m, 1984-Current)', 'Landsat'], ['Sentinel-2 (10m, 2015-Current)', 'Sentinel-2', true]], 'Landsat', '280px'));
-    add(el('div', 'pv-p', 'Index:')); var idxSel = add(MM.select([['Water Index (MNDWI)', 'MNDWI'], ['Water + Veg. Index (NDWI)', 'NDWI'], ['Vegetation Index (NDVI)', 'NDVI']], 'MNDWI', '280px'));
+    add(el('div', 'pv-p', 'Index:')); var idxSel = add(MM.select([['Water Index (MNDWI)', 'MNDWI'], ['Vegetation Index (NDVI)', 'NDVI']], 'MNDWI', '280px'));   // Landsat only: no NDWI
     var av = add(el('div', 'pv-note')); av.style.cssText = 'color:#666;font-style:italic;width:280px'; function refresh() { S.opts.index = idxSel.value; av.textContent = availabilityText(); } idxSel.addEventListener('change', refresh); refresh();
     var ap = add(button('Apply', function () { S.step = 3; showSiteSelection(); })); ap.style.width = '200px';
     thin('light'); MM.backButton(function () { MM.startTool('restoration_report'); });

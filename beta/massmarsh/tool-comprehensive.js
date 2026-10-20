@@ -22,7 +22,7 @@
     add(el('div', 'pv-h lg', 'Select Satellite and Index:'));
     add(el('div', 'pv-p', 'Satellite:')); var satSel = add(MM.select([['Landsat (30m, 1984-Current)', 'Landsat'], ['Sentinel-2 (20m, 2015-Current)', 'Sentinel-2', true], ['Sentinel-1 SAR (10m, 2014-Current)', 'Sentinel-1', true]], S.opts.satellite, '280px'));
     MM.enableSentinel2(satSel, function () { return MM.load('rasters').then(function (m) { return !!m['Sentinel-2_MNDWI']; }); });
-    add(el('div', 'pv-p', 'Index/Band:')); var idxSel = add(MM.select([['Water Index (MNDWI)', 'MNDWI'], ['Water + Veg. Index (NDWI)', 'NDWI'], ['Vegetation Index (NDVI)', 'NDVI']], ['MNDWI', 'NDWI', 'NDVI'].indexOf(S.opts.index) >= 0 ? S.opts.index : 'MNDWI', '280px'));
+    add(el('div', 'pv-p', 'Index/Band:')); var idxSel = add(MM.select([['Water Index (MNDWI)', 'MNDWI'], ['Water + Veg. Index (NDWI)', 'NDWI'], ['Vegetation Index (NDVI)', 'NDVI']], ['MNDWI', 'NDWI', 'NDVI'].indexOf(S.opts.index) >= 0 ? S.opts.index : 'MNDWI', '280px')); MM.limitIndexes(satSel, idxSel);
     thin();
     var go = add(button('Load Viewer', function () { S.opts.satellite = satSel.value; S.opts.index = idxSel.value; S.step = 3; loadViewer(); })); go.style.width = '120px';
     MM.citation(MM.CITATIONS.ditches);

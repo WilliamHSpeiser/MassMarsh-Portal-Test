@@ -45,7 +45,7 @@
     var satSel = add(MM.select([['Landsat (30m, 1984-Current)', 'Landsat'], ['Sentinel-2 (20m, 2015-Current)', 'Sentinel-2', true], ['Sentinel-1 SAR (10m, 2014-Current)', 'Sentinel-1', true]], S.opts.satellite, '280px'));
     MM.enableSentinel2(satSel, kind === 'inspector' ? function () { return MM.load('rasters').then(function (m) { return !!m['Sentinel-2_MNDWI']; }); } : null);   // needs the S2 cube (and, for the Inspector, the S2 slope rasters)
     add(el('div', 'pv-p', 'Index/Band:'));
-    var idxSel = add(MM.select([['Water Index (MNDWI)', 'MNDWI'], ['Water + Veg. Index (NDWI)', 'NDWI'], ['Vegetation Index (NDVI)', 'NDVI']], S.opts.index, '280px'));
+    var idxSel = add(MM.select([['Water Index (MNDWI)', 'MNDWI'], ['Water + Veg. Index (NDWI)', 'NDWI'], ['Vegetation Index (NDVI)', 'NDVI']], S.opts.index, '280px')); MM.limitIndexes(satSel, idxSel);
     var seaSel = null;
     if (kind === 'inspector') { add(el('div', 'pv-p', 'Season (time series):')); seaSel = add(MM.select([[MM.SEASONS.all.label, 'all'], [MM.SEASONS.summer.label, 'summer']], S.opts.season.key, '280px')); }
     thin();
@@ -140,10 +140,10 @@
     MM.cubeReady().then(function () { return MM.pixelSeries(latlng.lng, latlng.lat, S.opts.index); }).then(function (res) {
       if (req !== R.reqId) return; R.loading = false;
       if (!res || !res.pts) { R.panel.showError(info, MM.cubeAvailable() ? 'No time series data available.' : 'Pixel time series will appear once the series cube is published to the server.'); return; }
-      R.panel.setSeries(MM.seasonFilterKey(res.pts, R.chartSeason), info, res.nImages, seasonExtra());
+      R.panel.setSeries(MM.seasonFilterKey(res.pts, R.chartSeason), info, res.nImages, seasonExtra(latlng.lat));
     }).catch(function (e) { if (req !== R.reqId) return; R.loading = false; R.panel.showError(info, 'Error loading time series: ' + e.message); });
   }
-  function seasonExtra() { return { season: R.chartSeason, onSeason: function (k) { R.chartSeason = k; if (!R.last) return; if (R.last.kind === 'pixel') showPixel(R.last.arg); else showRegion(R.last.arg); } }; }
+  function seasonExtra(lat) { return { season: R.chartSeason, lat: lat, onSeason: function (k) { R.chartSeason = k; if (!R.last) return; if (R.last.kind === 'pixel') showPixel(R.last.arg); else showRegion(R.last.arg); } }; }
   function regionPixels(rings) {                               // cube pixels inside the drawn shape and the selection
     var sel = S.selection; var gm = MM.gridMask([rings], sel.method === 'Bounding Boxes' && sel.marshPolys ? sel.marshPolys : sel.polys);
     var px = MM.cubePixelsInMask(gm);
@@ -166,7 +166,7 @@
       var px = regionPixels(rings); var keys = Object.keys(px.byBlock);
       if (!keys.length) { R.loading = false; R.panel.showError(info, 'No time series data available.'); return; }
       if (keys.length > MAX_REGION_BLOCKS) { R.loading = false; info.push(el('div', 'pv-warn', 'Region too large for the averaged series (' + keys.length + ' blocks, max ' + MAX_REGION_BLOCKS + '); showing statistics only.')); R.panel.setSeries([], info, 0); return; }
-      return MM.meanSeries(px.byBlock, S.opts.index).then(function (res) { if (req !== R.reqId) return; R.loading = false; R.panel.setSeries(MM.seasonFilterKey(res.pts, R.chartSeason), info, res.nImages, seasonExtra()); });
+      return MM.meanSeries(px.byBlock, S.opts.index).then(function (res) { if (req !== R.reqId) return; R.loading = false; R.panel.setSeries(MM.seasonFilterKey(res.pts, R.chartSeason), info, res.nImages, seasonExtra((bb[1] + bb[3]) / 2)); });
     }).catch(function (e) { if (req !== R.reqId) return; R.loading = false; R.panel.showError(info, 'Error loading time series: ' + e.message); });
   }
 

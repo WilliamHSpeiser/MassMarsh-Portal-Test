@@ -211,6 +211,10 @@ window.MM = (function () {
     add(el('div', 'pv-p', labelText)); var row = add(el('div', 'pv-row')); var sl = el('input'); sl.type = 'range'; sl.min = 0; sl.max = 1; sl.step = 0.1; sl.value = value === undefined ? 1 : value;
     var sv = el('span', '', String(sl.value)); sl.addEventListener('input', function () { sv.textContent = sl.value; onInput(parseFloat(sl.value)); }); row.appendChild(sl); row.appendChild(sv); return sl;
   }
+  function limitIndexes(satSel, idxSel) {                    // NDWI is offered for Sentinel-2 only (kept for the coming 10 m products); Landsat: MNDWI / NDVI
+    function apply() { var ndwi = Array.prototype.filter.call(idxSel.options, function (o) { return o.value === 'NDWI'; })[0]; if (!ndwi) return; var s2 = satSel.value === 'Sentinel-2'; ndwi.disabled = !s2; ndwi.hidden = !s2; if (!s2 && idxSel.value === 'NDWI') idxSel.value = 'MNDWI'; }
+    satSel.addEventListener('change', apply); apply(); return idxSel;
+  }
   function select(items, value, width) { var s = el('select'); items.forEach(function (it) { var o = el('option', '', typeof it === 'string' ? it : it[0]); if (typeof it !== 'string') { o.value = it[1]; if (it[2]) { o.disabled = true; o.title = 'Not available in this version'; } } s.appendChild(o); }); if (value !== undefined) s.value = value; if (width) s.style.width = width; return s; }
   function backButton(cb) { return add(button('← Back', function () { exitTool(); cb(); }, 'pv-back')); }   // main's createBackButton: clears every layer and the selection
 
@@ -284,10 +288,16 @@ window.MM = (function () {
     sel.maskGeometry = sel.clipGeometry || sel.marshGeometry;   // for raster masking: the drawn shape, else the marsh polygons
     S.selection = sel; S.step = 2;
   }
-  function drawHighlight(style, name) {                        // 'Selected Marsh' / 'Selected Area' (yellow, width 3) or 'Selection' (cyan, width 2) after a tool switch
+  function glowLayer(geom, opts) {                            // thin glowing cyan outline, no fill (soft wide stroke under a thin bright one), like the pool swipe
+    opts = opts || {}; var g = L.featureGroup();
+    g.addLayer(L.geoJSON(geom, { renderer: canvas, interactive: false, style: { color: '#00e5ff', weight: opts.glow || 7, opacity: 0.35, fill: false, lineJoin: 'round' } }));
+    g.addLayer(L.geoJSON(geom, { renderer: canvas, interactive: false, style: { color: '#00ffff', weight: opts.weight || 1.5, opacity: 1, fill: false, lineJoin: 'round' } }));
+    return g;
+  }
+  function drawHighlight(style, name) {                        // the selected marsh / area / units: glowing cyan outline (style argument kept for callers)
     removeLayer('highlight'); var s = S.selection; if (!s) return;
     var g = s.clip ? polysToGeoJSON(s.clip) : (s.method === 'Bounding Boxes' ? s.rectangleGeometry : s.geometry);
-    layers.highlight = L.geoJSON(g, { renderer: canvas, interactive: false, style: style || { color: 'yellow', weight: 3, fill: false } }).addTo(map);
+    layers.highlight = glowLayer(g).addTo(map);
     layers.highlight._name = name || 'Selected Area';
   }
   function exitTool() {                                        // createBackButton: clear all layers, the tool's state and the selection
@@ -380,10 +390,10 @@ window.MM = (function () {
     labelWithInfo('Report Generators', 'Compile a report with remote sensing information to summarize observations in a selected area and flag locations possibly requiring attention.\n\n• Marsh Assessment Report – Generate a report that summarizes feature selections and their remote sensing trajectory, or find areas that may warrant concern\n\n• Restoration Efficacy Report – Generate a report that documents the time series at selected locations within a marsh and, if desired, any changes from user-input dates (such as project implementation dates)\n\n• Comprehensive Report – Generate both above reports in the same place, on the same document');
     ['assessment_report', 'restoration_report', 'comprehensive_report'].forEach(toolButton);
     add(el('div', 'pv-divider')).style.margin = '20px 0 15px 0';
-    labelWithInfo('Analysis Tools', 'Explore marsh dynamics with our specialized analysis tools:\n\n• Pool Viewer – Summer-scene (June-August) time series and Landsat / Sentinel-2 MNDWI, NDWI and NDVI trajectories for individual pools; per-pool slope statistics are pre-computed for Landsat MNDWI (1985-2026) and Sentinel-2 MNDWI (2015-2023)\n• Ditch Viewer – Examine and analyze time series trends for ditches from Peck et al., 2025\n• Raster Viewer – Examine rasters and analyze time series trends for individual and groups of pixels\n• Comprehensive Viewer – All viewers combined in one toolbox');
+    labelWithInfo('Analysis Tools', 'Explore marsh dynamics with our specialized analysis tools:\n\n• Pool Viewer – Summer-scene (June-August) time series and Landsat / Sentinel-2 MNDWI, NDWI and NDVI trajectories for individual pools; per-pool slope statistics are pre-computed for Landsat MNDWI (1985-2026) and Sentinel-2 MNDWI (2015-2023)\n\n• Ditch Viewer – Examine and analyze time series trends for ditches from Peck et al., 2025\n\n• Raster Viewer – Examine rasters and analyze time series trends for individual and groups of pixels\n\n• Comprehensive Viewer – All viewers combined in one toolbox');
     ['pool_viewer', 'ditch_viewer', 'raster_viewer', 'comprehensive_viewer'].forEach(toolButton);
     add(el('div', 'pv-divider')).style.margin = '20px 0 15px 0';
-    labelWithInfo('External Products', 'Access external data products and specialized analyses:\n\n• UVVR Viewer – Vegetated Fraction (%) measures the percentage of vegetated marsh surface. From Ganju et al., 2022.\n• LiDAR Viewer – Analyze LiDAR elevation data with transect profiling tools.\n• Historical Imagery Viewer – Compare historical aerial imagery from 1938 to present with opacity slider.');
+    labelWithInfo('External Products', 'Access external data products and specialized analyses:\n\n• UVVR Viewer – Vegetated Fraction (%) measures the percentage of vegetated marsh surface. From Ganju et al., 2022.\n\n• LiDAR Viewer – Analyze LiDAR elevation data with transect profiling tools.\n\n• Historical Imagery Viewer – Compare historical aerial imagery from 1938 to present with opacity slider.');
     ['uvvr_viewer', 'lidar_viewer', 'historical_imagery'].forEach(toolButton);
     thin('light').style.margin = '30px 0 10px 0';
     add(el('div', 'pv-small', 'For comments or questions, please contact:'));
@@ -575,6 +585,20 @@ window.MM = (function () {
     var a = hexToRgb(pal[i]), b = hexToRgb(pal[i + 1]);
     return 'rgb(' + Math.round(a[0] + (b[0] - a[0]) * u) + ',' + Math.round(a[1] + (b[1] - a[1]) * u) + ',' + Math.round(a[2] + (b[2] - a[2]) * u) + ')';
   }
+  // ---------- tide stage of each scene: NOAA gauges Boston (macrotidal marshes north of Chatham / Nauset) and Woods Hole, Falmouth (microtidal sites southward) ----------
+  var TIDE_STATIONS = { '8443970': 'Boston', '8447930': 'Woods Hole (Falmouth)' };
+  var TIDE_KEYS = { all: 'all tides', mlw: 'below MLW', lt_msl: 'below MSL', gt_msl: 'above MSL', mhw: 'above MHW' };
+  function tideStationFor(lat) { return lat >= 41.67 ? '8443970' : '8447930'; }   // Chatham / Nauset (~41.67 N) splits the two regimes
+  var tideCache = {};
+  function tideTable(station) {                              // tides/<station>.json: daily water level (m MLLW) at the ~15:30 UTC overpass + datums
+    if (!tideCache[station]) tideCache[station] = fetch(serverUrl('tides/' + station + '.json?v=' + DATA_VERSION)).then(function (r) { if (!r.ok) throw new Error('tide table HTTP ' + r.status); return r.json(); }).then(function (t) { t.epochMs = Date.parse(t.epoch + 'T00:00:00Z'); return t; });
+    return tideCache[station];
+  }
+  function tideLevel(tab, ms) { var i = Math.round((ms - tab.epochMs) / 86400000); var v = tab.levels[i]; return (v === null || v === undefined) ? null : v; }
+  function tideFilter(pts, key, tab) {
+    if (key === 'all' || !tab) return pts; var d = tab.datums;
+    return pts.filter(function (p) { var v = tideLevel(tab, p.ms); if (v === null) return false; return key === 'mlw' ? v < d.MLW : key === 'lt_msl' ? v < d.MSL : key === 'gt_msl' ? v > d.MSL : v > d.MHW; });
+  }
   function seasonFilter(pts) { return seasonFilterKey(pts, S.opts.season.key); }
   function seasonFilterKey(pts, key) { return key === 'summer' ? pts.filter(function (p) { var mo = new Date(p.ms).getUTCMonth() + 1; return mo >= 6 && mo <= 8; }) : pts; }
   function dayPts(days, vals, plats, scale) { var out = []; for (var i = 0; i < days.length; i++) { var ms = EPOCH_MS + days[i] * DAY_MS; out.push({ ms: ms, years: (ms - EPOCH_MS) / YEAR_MS, value: vals[i] / (scale || 1), plat: plats ? plats[i] : undefined }); } return out; }
@@ -637,8 +661,27 @@ window.MM = (function () {
     P.info = el('div'); P.chart = el('div'); P.custom = el('div'); P.custom.style.display = 'none'; parent.appendChild(P.info); parent.appendChild(P.chart); parent.appendChild(P.custom);
     P.custom.appendChild(el('div', 'pv-thin'));
     // scenes shown in the chart (summer only / all); defaults to the season chosen in the tool's settings, shown only when the tool handles it
-    P.seasonRow = el('div', 'pv-row'); P.seasonRow.appendChild(el('span', 'pv-small', 'Scenes shown:')); P.seasonSel = select([['Summer (Jun-Aug)', 'summer'], ['All scenes', 'all']], 'all', '150px'); P.seasonRow.appendChild(P.seasonSel); P.seasonRow.style.display = 'none'; P.custom.appendChild(P.seasonRow);
+    P.seasonRow = el('div', 'pv-row'); P.seasonSel = select([['Summer (Jun-Aug)', 'summer'], ['All scenes', 'all']], 'all', '150px'); P.seasonRow.appendChild(P.seasonSel); P.seasonRow.style.display = 'none'; P.custom.appendChild(P.seasonRow);
     P.seasonSel.addEventListener('change', function () { if (P.onSeason) P.onSeason(P.seasonSel.value); });
+    // tide stage at the overpass (NOAA gauge chosen by latitude), directly to the right of the season subset; 'All' by default
+    P.tideSel = select([['All tides', 'all'], ['< MLW', 'mlw'], ['< MSL', 'lt_msl'], ['> MSL', 'gt_msl'], ['> MHW', 'mhw']], 'all', '110px'); P.tideSel.title = 'Keep only scenes whose water level at the satellite overpass (NOAA gauge, ~15:30 UTC) was below/above the datum'; P.seasonRow.appendChild(P.tideSel);
+    P.tideNote = el('div', 'pv-note'); P.custom.insertBefore(P.tideNote, P.seasonRow.nextSibling);
+    P.tideSel.addEventListener('change', applyTide);
+    function redrawWith(pts) {
+      P.pts = pts; P.trendInfo.innerHTML = ''; P.cpInfo.innerHTML = ''; resetButtons();
+      if (!pts.length) { P.chart.innerHTML = ''; P.chart.appendChild(el('div', 'pv-err', 'No scenes at this tide stage.')); return; }
+      drawMain(); P.addTrend.disabled = false; P.calc.disabled = false;
+    }
+    function applyTide() {
+      var key = P.tideSel.value; if (!P.basePts) return;
+      if (key === 'all') { P.tideNote.textContent = ''; redrawWith(P.basePts); return; }
+      var st = tideStationFor(P.lat); P.tideNote.textContent = 'Loading ' + TIDE_STATIONS[st] + ' tide levels...';
+      tideTable(st).then(function (tab) {
+        if (P.tideSel.value !== key) return; var pts = tideFilter(P.basePts, key, tab); var fit = linearFit(xy(pts));
+        P.tideNote.textContent = TIDE_STATIONS[st] + ' gauge: ' + pts.length + ' of ' + P.basePts.length + ' scenes ' + TIDE_KEYS[key] + (fit.slope !== null && fit.slope !== undefined && pts.length > 2 ? ' | subset slope ' + fit.slope.toFixed(6) + ' /yr' : '');
+        redrawWith(pts);
+      }).catch(function (e) { P.tideNote.textContent = 'Tide data unavailable (' + e.message + ')'; });
+    }
     P.custom.appendChild(el('div', 'pv-h', 'Specific Date Range Trend:')); P.custom.appendChild(el('div', 'pv-note', 'Add dates to divide time series into segments:'));
     var r = el('div', 'pv-row'); r.appendChild(el('span', 'pv-small', 'Date:')); P.bpInput = el('input'); P.bpInput.type = 'text'; P.bpInput.placeholder = 'YYYY-MM-DD'; P.bpInput.style.width = '100px'; r.appendChild(P.bpInput); P.custom.appendChild(r);
     P.trendInfo = el('div'); P.custom.appendChild(P.trendInfo);
@@ -653,10 +696,14 @@ window.MM = (function () {
     P.showError = function (nodes, text) { P.info.innerHTML = ''; (nodes || []).forEach(function (n) { P.info.appendChild(n); }); P.chart.innerHTML = ''; P.chart.appendChild(el('div', 'pv-err', text)); };
     P.setSeries = function (pts, infoNodes, nImages, extra) {   // extra: { season: 'summer'|'all', onSeason(key) } enables the scenes selector
       P.info.innerHTML = ''; (infoNodes || []).forEach(function (n) { P.info.appendChild(n); }); P.chart.innerHTML = ''; P.trendInfo.innerHTML = ''; P.cpInfo.innerHTML = ''; resetButtons();
-      P.pts = pts; P.nImages = nImages; extra = extra || {}; P.onSeason = extra.onSeason || null;
-      if (P.onSeason) { P.seasonSel.value = extra.season || 'all'; P.seasonRow.style.display = ''; } else P.seasonRow.style.display = 'none';
+      P.pts = pts; P.basePts = pts; P.nImages = nImages; extra = extra || {}; P.onSeason = extra.onSeason || null; P.lat = extra.lat;
+      if (P.onSeason) { P.seasonSel.value = extra.season || 'all'; P.seasonSel.style.display = ''; } else P.seasonSel.style.display = 'none';
+      var tides = P.lat !== undefined && P.lat !== null; P.tideSel.style.display = tides ? '' : 'none'; if (!tides) P.tideSel.value = 'all';
+      P.seasonRow.style.display = (P.onSeason || tides) ? '' : 'none';
       if (!pts || !pts.length) { P.chart.appendChild(el('div', 'pv-err', 'No time series data available.')); return; }
-      drawMain(); P.custom.style.display = ''; P.addTrend.disabled = false; P.calc.disabled = false;
+      P.custom.style.display = '';
+      if (P.tideSel.value !== 'all') { applyTide(); return; }                 // keep an active tide subset across re-runs (season / raw toggles)
+      P.tideNote.textContent = ''; drawMain(); P.addTrend.disabled = false; P.calc.disabled = false;
     };
     function drawMain() { var pts = P.pts; var ds = [scatterDs(pts, opts.pointColor || '#9c27b0', opts.seriesLabel || 'Mean', 3)]; var tr = trendDataset(pts, '#e63946', '_trend', 2); if (tr) ds.push(tr); drawChart(P.chart, opts.titleFn('main'), ds, 280, 'none'); caption(P.chart, opts.captionFn(P)); }
     function addBreakpoint() {
@@ -1005,7 +1052,7 @@ window.MM = (function () {
     inSelection: inSelection, selectionPools: selectionPools, selectionDitches: selectionDitches, selectionScenes: selectionScenes, selectionUnits: selectionUnits, drawHighlight: drawHighlight, exitTool: exitTool, showLanding: showLanding, showAreaSelection: showAreaSelection,
     removeLayer: removeLayer, addToolLayer: addToolLayer, removeToolLayer: removeToolLayer, clearToolLayers: clearToolLayers, clearAllLayers: clearAllLayers,
     armDraw: armDraw, stopDraw: stopDraw, isDrawing: isDrawing, setClickHandler: setClickHandler, addSwitcher: addSwitcher, removeSwitcher: removeSwitcher,
-    linearFit: linearFit, xy: xy, fitSeries: fitSeries, percentile: percentile, nearestRank: nearestRank, rampColor: rampColor, hexToRgb: hexToRgb, seasonFilter: seasonFilter, seasonFilterKey: seasonFilterKey, dayPts: dayPts,
+    linearFit: linearFit, xy: xy, fitSeries: fitSeries, percentile: percentile, nearestRank: nearestRank, rampColor: rampColor, hexToRgb: hexToRgb, seasonFilter: seasonFilter, seasonFilterKey: seasonFilterKey, glowLayer: glowLayer, ICONS: ICONS, limitIndexes: limitIndexes, tideStationFor: tideStationFor, tideTable: tideTable, TIDE_STATIONS: TIDE_STATIONS, dayPts: dayPts,
     trendDataset: trendDataset, scatterDs: scatterDs, drawChart: drawChart, caption: caption, seriesPanel: seriesPanel, legendBlock: legendBlock, mapLegend: mapLegend, imageryCatalog: imageryCatalog, setBasemap: setBasemap, startMeasure: startMeasure, busy: busy, listservDialog: listservDialog,
     cubeReady: cubeReady, cubeAvailable: cubeAvailable, cube: cube, CUBES: CUBES, pkey: pkey, platName: platName, loadBlock: loadBlock, cubeLocate: cubeLocate, cubeLocateUtm: cubeLocateUtm, pixelSeries: pixelSeries, pixelSeriesFromBlock: pixelSeriesFromBlock, meanSeries: meanSeries, pool: pool, gridMask: gridMask, cubePixelsInMask: cubePixelsInMask, selectionMask: selectionMask, bandIndex: bandIndex,
     POOL_DS: POOL_DS, POOL_PROVENANCE: POOL_PROVENANCE, poolDataset: poolDataset, poolSlopeProps: poolSlopeProps, poolSlopeOf: poolSlopeOf, poolStatsLine: poolStatsLine, poolSeriesPts: poolSeriesPts, seriesDir: seriesDir, enableSentinel2: enableSentinel2, loadServerRaster: loadServerRaster, loadSlopeRaster: loadSlopeRaster,

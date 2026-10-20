@@ -135,3 +135,7 @@ html, body { height: 100%; margin: 0; }
 .pv-swipe-item { padding: 3px 8px; cursor: pointer; white-space: nowrap; }
 .pv-swipe-item:hover { background: rgba(0,229,255,0.25); color: #006064; }
 .pv-swipe-item.sel { font-weight: bold; }
+.pv-swipe { display: inline-block; max-width: 100%; }
+.pv-swipe .pv-chart-expand { top: 3px; right: 3px; }
+.pv-swipe-big { flex: 1 1 auto; min-height: 0; display: flex; align-items: center; justify-content: center; }
+.pv-swipe-big canvas { max-height: 100%; }

@@ -101,14 +101,14 @@
     ui.prompt.style.display = 'none'; P.panel.setLoading('Loading pool time series...');
     MM.withTimeout(MM.loadPoolSeries(p.pid), 30000).then(function (raw) {
       if (req !== P.reqId) return; P.loading = false; var pts = seriesPoints(raw); P.last = { f: f, latlng: latlng, pts: pts };
-      MM.addToolLayer('selectedPool', L.geoJSON(f, { renderer: MM.canvas, interactive: false, style: { color: 'yellow', weight: 3, fillColor: '#FFFF00', fillOpacity: 0.25 } }));
+      MM.addToolLayer('selectedPool', MM.glowLayer(f));            // thin glowing cyan outline, like the swipe
       var fit = MM.fitSeries(pts);
       var info = [el('div', 'pv-h lg', 'Pool Information'), el('div', 'pv-small', 'Lat: ' + latlng.lat.toFixed(5) + ', Lon: ' + latlng.lng.toFixed(5)),
         el('div', 'pv-h lg', 'Mean ' + valueLabel(pts) + ' Slope: ' + (fit.slope !== null && fit.slope !== undefined ? fit.slope.toFixed(6) + ' /year' : 'n/a')), el('div', 'pv-note', '(Calculated from averaged time series)'), el('div', 'pv-small', 'Valid observations: ' + pts.length)];
       info.push(el('div', 'pv-small', 'Stored trend: ' + MM.poolStatsLine(p, S.opts.satellite, chartSeason())));
       if (s2() && !P.raw && pts.referenced === false && pts.length) { var rw = el('div', 'pv-note', 'No marsh reference is available for this pool (series filled from the pixel cube); raw MNDWI is plotted.'); rw.style.color = '#e65100'; info.push(rw); }
       if (!pts.length) { P.panel.showError(info, 'No ' + SEASONS[chartSeason()].scenesWord + ' over this selection.'); return; }
-      P.panel.setSeries(pts, info, P.scenes ? P.scenes[chartSeason() + (s2() ? '_s2' : '')] : null, { season: chartSeason(), onSeason: function (k) { P.chartSeason = k; if (P.last) monoClick(P.last.f, P.last.latlng); } });
+      P.panel.setSeries(pts, info, P.scenes ? P.scenes[chartSeason() + (s2() ? '_s2' : '')] : null, { season: chartSeason(), lat: latlng.lat, onSeason: function (k) { P.chartSeason = k; if (P.last) monoClick(P.last.f, P.last.latlng); } });
       if (ui.swipe) poolSwipe(ui.swipe, f);
     }).catch(function (e) { if (req !== P.reqId) return; P.loading = false; P.panel.showError([], 'Error loading time series: ' + e.message); });
   }
@@ -140,14 +140,13 @@
     ctx.putImageData(img, 0, 0);
   }
   function poolSwipe(container, f) {
-    container.innerHTML = ''; if (SW.anim) { cancelAnimationFrame(SW.anim); SW.anim = null; } var seq = ++SW.seq; SW.closeMenu = null;
+    container.innerHTML = ''; var seq = ++SW.seq; (SW.views || []).slice().forEach(function (v) { v.destroy(); }); SW.views = [];
     if (typeof pmtiles === 'undefined') return;
     var fb = MM.featureBbox(f); var u0 = MM.toUtm(fb[0], fb[1]), u1 = MM.toUtm(fb[2], fb[3]); var pad = 15;
     var c0 = MM.fromUtm(u0[0] - pad, u0[1] - pad), c1 = MM.fromUtm(u1[0] + pad, u1[1] + pad); var b = [c0[0], c0[1], c1[0], c1[1]];
     var wM = (u1[0] - u0[0]) + 2 * pad, hM = (u1[1] - u0[1]) + 2 * pad;
     container.appendChild(el('div', 'pv-thin')); var note = el('div', 'pv-grey', 'Loading imagery...'); container.appendChild(note);   // own mini section under the chart notes
     function isRgb(im) { return !/_BW\b/i.test(im.key || '') && !/^(AutoGeoreferencer|NHAP)$/.test(im.source || ''); }
-    function imLabel(im) { return im.year + ' – ' + (SRC_LABEL[im.source] || im.source); }
     MM.imageryCatalog().then(function (cat) {
       if (seq !== SW.seq) return;
       var imgs = (cat.images || []).filter(function (im) { return im.footprint && coversBox(im, b); }).sort(function (p, q) { return catYear(p) - catYear(q); });
@@ -155,75 +154,86 @@
       var since90 = imgs.filter(function (im) { return catYear(im) >= 1990; }); var sel = [since90.filter(isRgb)[0] || since90[0], imgs.length ? imgs[imgs.length - 1] : null];
       if (SW.keep && SW.keep.pid === f.properties.pid) SW.keep.keys.forEach(function (k, i) { var im = imgs.filter(function (x) { return x.key === k; })[0]; if (im) sel[i] = im; });   // keep the user's picks when the panel re-renders (season / raw toggles)
       if (!sel[0] || !sel[1] || sel[0].key === sel[1].key) { note.textContent = 'Not enough imagery covers this pool (need an image from 1990 on and a newer one).'; return; }
-      var side = 18, size = 300; var W = size, H = Math.max(120, Math.round(size * hM / wM)); if (H > 400) { H = 400; W = Math.round(400 * wM / hM); }
-      var cvs = [null, null];
-      function fetchSide(i, im) { return fetchWindow(im, b, W, H).then(function (cv) { if (seq !== SW.seq) return; stretchContrast(cv); cvs[i] = cv; sel[i] = im; SW.keep = { pid: f.properties.pid, keys: [sel[0].key, sel[1].key] }; }); }
-      return Promise.all([fetchSide(0, sel[0]), fetchSide(1, sel[1])]).then(function () {
-        if (seq !== SW.seq) return; note.remove();
-        var wrap = el('div', 'pv-swipe'); container.appendChild(wrap);
-        var out = el('canvas'); out.width = W + 2 * side; out.height = H; out.style.cssText = 'max-width:100%;display:block;border:1px solid #999;background:#fff'; wrap.appendChild(out);
-        var cap = el('div', 'pv-note'); container.appendChild(cap);
-        function updateCaption() { cap.textContent = 'Pool ' + f.properties.st + '-' + f.properties.pid + ': box ' + Math.round(wM) + ' x ' + Math.round(hM) + ' m (pool bounds + 15 m). Left: ' + sel[0].year + ' ' + (SRC_LABEL[sel[0].source] || sel[0].source) + '; right: ' + sel[1].year + ' ' + (SRC_LABEL[sel[1].source] || sel[1].source) + '. Click a side title to choose another image.'; }
-        updateCaption();
-        var Z = 18, X0 = lon2x(b[0], Z), X1 = lon2x(b[2], Z), Y0 = lat2y(b[3], Z), Y1 = lat2y(b[1], Z);   // pool outline in canvas pixels (Mercator, linear in the box)
-        var rings = MM.ringsOf(f.geometry).reduce(function (a, poly) { return a.concat(poly); }, []).map(function (ring) { return ring.map(function (c) { return [(lon2x(c[0], Z) - X0) * W / (X1 - X0), (lat2y(c[1], Z) - Y0) * H / (Y1 - Y0)]; }); });
-        var ctx = out.getContext('2d'); var t0 = performance.now(); var hover = -1;   // hovered side title: 0 = left, 1 = right
-        function outline() {                                  // the selected pool: thin glowing cyan outline, no fill
-          ctx.save(); ctx.translate(side, 0); ctx.lineJoin = 'round'; ctx.strokeStyle = '#00ffff'; ctx.shadowColor = 'rgba(0,255,255,0.95)';
-          rings.forEach(function (r) { ctx.beginPath(); r.forEach(function (p, i) { if (i) ctx.lineTo(p[0], p[1]); else ctx.moveTo(p[0], p[1]); }); ctx.closePath(); ctx.shadowBlur = 8; ctx.lineWidth = 1.2; ctx.stroke(); ctx.shadowBlur = 3; ctx.stroke(); });
-          ctx.restore();
-        }
-        function title(i, exporting) {                        // rotated side title with a small stemless down arrow at its top end; cyan while hovered
-          var x = i === 0 ? side / 2 : side + W + side / 2, text = imLabel(sel[i]), col = (!exporting && hover === i) ? '#00e5ff' : '#222';
-          ctx.save(); ctx.font = 'bold 11px Roboto, sans-serif'; var tw = ctx.measureText(text).width; ctx.translate(x, H / 2); ctx.rotate(-Math.PI / 2); ctx.fillStyle = col; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(text, 0, 0); ctx.restore();
-          var ty = Math.max(9, H / 2 - tw / 2 - 4); ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(x - 4.5, ty - 7); ctx.lineTo(x + 4.5, ty - 7); ctx.lineTo(x, ty); ctx.closePath(); ctx.fill();
-        }
-        function paint(frac, exporting) {                     // one swipe position, frac 0..1 of the width; exporting = GIF frame (watermark, no hover colour)
-          var x = Math.round(frac * W);
-          ctx.clearRect(0, 0, out.width, H); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, out.width, H);
-          if (x > 0) ctx.drawImage(cvs[0], 0, 0, x, H, side, 0, x, H); if (W - x > 0) ctx.drawImage(cvs[1], x, 0, W - x, H, side + x, 0, W - x, H);
-          outline();
-          ctx.fillStyle = '#ffeb3b'; ctx.fillRect(side + x - 1, 0, 2, H);
-          title(0, exporting); title(1, exporting);
-          if (exporting) { ctx.save(); ctx.font = '8px Roboto, sans-serif'; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom'; ctx.shadowColor = 'rgba(0,0,0,0.9)'; ctx.shadowBlur = 2; ctx.fillStyle = '#fff'; ctx.fillText('source: MassMarshViewer.com', side + W - 3, H - 2); ctx.restore(); }
-        }
-        function frame(now) {
-          if (seq !== SW.seq || !out.isConnected) { SW.anim = null; return; }
-          var ph = ((now - t0) / 4000) % 2; paint(ph < 1 ? ph : 2 - ph);
-          SW.anim = requestAnimationFrame(frame);
-        }
-        SW.anim = requestAnimationFrame(frame);
-        // side titles: hovering turns them cyan, a click opens the list of every image covering the pool for that side
-        function sideAt(ev) { var r = out.getBoundingClientRect(); var x = (ev.clientX - r.left) * out.width / r.width; return x < side ? 0 : x > side + W ? 1 : -1; }
-        var menu = null;
-        function closeMenu() { if (menu) { menu.remove(); menu = null; } }
-        function openMenu(i) {
-          closeMenu(); menu = el('div', 'pv-swipe-menu'); menu.appendChild(el('div', 'pv-swipe-menu-h', (i === 0 ? 'Left' : 'Right') + ' image'));
-          imgs.forEach(function (im) {
-            var it = el('div', 'pv-swipe-item' + (im.key === sel[i].key ? ' sel' : ''), imLabel(im));
-            it.addEventListener('click', function (ev) { ev.stopPropagation(); closeMenu(); if (im.key === sel[i].key) return; cap.textContent = 'Loading ' + imLabel(im) + '...'; fetchSide(i, im).then(function () { if (seq === SW.seq) updateCaption(); }).catch(function (e) { cap.textContent = 'Could not load ' + imLabel(im) + ': ' + e.message; }); });
-            menu.appendChild(it);
-          });
-          var r = out.getBoundingClientRect(), scale = r.width / out.width; menu.style.left = Math.round((i === 0 ? side : side + W + side) * scale) + 'px'; menu.style.top = '4px';
-          wrap.appendChild(menu); var mw = menu.offsetWidth; if (menu.offsetLeft + mw > wrap.clientWidth) menu.style.left = Math.max(0, wrap.clientWidth - mw) + 'px';
-        }
-        out.addEventListener('mousemove', function (ev) { var s = sideAt(ev); if (s !== hover) { hover = s; out.style.cursor = s >= 0 ? 'pointer' : ''; } });
-        out.addEventListener('mouseleave', function () { hover = -1; out.style.cursor = ''; });
-        out.addEventListener('click', function (ev) { ev.stopPropagation(); var s = sideAt(ev); if (s >= 0) openMenu(s); else closeMenu(); });
-        SW.closeMenu = function (ev) { if (menu && !menu.contains(ev.target)) closeMenu(); };
-        if (!SW.docClick) { SW.docClick = true; document.addEventListener('click', function (ev) { if (SW.closeMenu) SW.closeMenu(ev); }); }
-        // GIF download: one sweep left -> right -> left, 40 frames at 100 ms, encoded in the browser (gifenc, loaded on demand)
-        var row = el('div', 'pv-row'); var gb = button('Download GIF', function () {
-          gb.disabled = true; gb.textContent = 'Encoding GIF...';
-          import('https://cdn.jsdelivr.net/npm/gifenc@1.0.3/+esm').then(function (G) {
-            var enc = G.GIFEncoder(); var N = 40;
-            for (var k = 0; k < N; k++) { var fr = k / (N - 1); paint(k < N / 2 ? fr * 2 : 2 - fr * 2, true); var data = ctx.getImageData(0, 0, out.width, H).data; var pal = G.quantize(data, 256); var idx = G.applyPalette(data, pal); enc.writeFrame(idx, out.width, H, { palette: pal, delay: 100, repeat: 0 }); }
-            enc.finish(); var blob = new Blob([enc.bytes()], { type: 'image/gif' }); var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'pool_' + f.properties.st + '_' + f.properties.pid + '_' + String(sel[0].year).slice(0, 4) + '_vs_' + String(sel[1].year).slice(0, 4) + '.gif'; a.click();
-            gb.disabled = false; gb.textContent = 'Download GIF';
-          }).catch(function (e) { gb.disabled = false; gb.textContent = 'Download GIF'; cap.textContent += ' (GIF encoding failed: ' + e.message + ')'; });
-        }, 'small'); row.appendChild(gb); container.appendChild(row);
-      });
+      var Z = 18, X0 = lon2x(b[0], Z), X1 = lon2x(b[2], Z), Y0 = lat2y(b[3], Z), Y1 = lat2y(b[1], Z);   // pool outline in unit-square coordinates of the box (Mercator, linear in the box)
+      var rings = MM.ringsOf(f.geometry).reduce(function (a, poly) { return a.concat(poly); }, []).map(function (ring) { return ring.map(function (c) { return [(lon2x(c[0], Z) - X0) / (X1 - X0), (lat2y(c[1], Z) - Y0) / (Y1 - Y0)]; }); });
+      var st = { f: f, b: b, wM: wM, hM: hM, imgs: imgs, sel: sel, rings: rings, views: [] };
+      st.pick = function (i, im) { if (im.key === sel[i].key) return; sel[i] = im; SW.keep = { pid: f.properties.pid, keys: [sel[0].key, sel[1].key] }; st.views.forEach(function (v) { v.reload(i); }); };
+      SW.keep = { pid: f.properties.pid, keys: [sel[0].key, sel[1].key] }; SW.views = st.views;
+      var wrap = el('div', 'pv-swipe'); container.appendChild(wrap); var cap = el('div', 'pv-note'); container.appendChild(cap);
+      var view = swipeView(wrap, st, { size: 300, fontScale: 1, caption: cap, note: note });
+      var ex = el('button', 'pv-chart-expand'); ex.type = 'button'; ex.title = 'Expand'; ex.innerHTML = MM.ICONS.expand; ex.addEventListener('click', function (ev) { ev.stopPropagation(); openSwipeModal(st); }); wrap.appendChild(ex);
+      var row = el('div', 'pv-row'); var gb = button('Download GIF', function () { view.gif(gb); }, 'small'); row.appendChild(gb); container.appendChild(row);
     }).catch(function (e) { if (seq === SW.seq) note.textContent = 'Imagery not available: ' + e.message; });
+  }
+  // one rendering of the swipe (inline panel view or the expanded modal view); several views share the state st (images picked per side)
+  function swipeView(parent, st, o) {
+    var fs = o.fontScale || 1, side = Math.round(18 * fs); var W = o.size, H = Math.max(Math.round(120 * fs), Math.round(W * st.hM / st.wM)); var maxH = o.maxH || 400 * fs; if (H > maxH) { H = Math.round(maxH); W = Math.round(H * st.wM / st.hM); }
+    var out = el('canvas'); out.width = W + 2 * side; out.height = H; out.style.cssText = 'max-width:100%;display:block;border:1px solid #999;background:#fff'; parent.appendChild(out);
+    var ctx = out.getContext('2d'), cvs = [null, null], hover = -1, t0 = performance.now(), alive = true, anim = null, menu = null; var v = { out: out };
+    function label(im) { return im.year + ' – ' + (SRC_LABEL[im.source] || im.source); }
+    function caption() { if (o.caption) o.caption.textContent = 'Pool ' + st.f.properties.st + '-' + st.f.properties.pid + ': box ' + Math.round(st.wM) + ' x ' + Math.round(st.hM) + ' m (pool bounds + 15 m). Left: ' + st.sel[0].year + ' ' + (SRC_LABEL[st.sel[0].source] || st.sel[0].source) + '; right: ' + st.sel[1].year + ' ' + (SRC_LABEL[st.sel[1].source] || st.sel[1].source) + '. Click a side title to choose another image.'; }
+    function load(i) { var im = st.sel[i]; return fetchWindow(im, st.b, W, H).then(function (cv) { if (!alive) return; stretchContrast(cv); cvs[i] = cv; }); }
+    v.reload = function (i) { if (o.caption) o.caption.textContent = 'Loading ' + label(st.sel[i]) + '...'; return load(i).then(caption).catch(function (e) { if (o.caption) o.caption.textContent = 'Could not load ' + label(st.sel[i]) + ': ' + e.message; }); };
+    function paintTo(c, k, frac, exporting) {               // draw the view at scale k into context c; exporting = GIF frame (watermark, no hover colour)
+      var w = W * k, h = H * k, sd = side * k, x = Math.round(frac * w), tw2 = (W + 2 * side) * k;
+      c.clearRect(0, 0, tw2, h); c.fillStyle = '#fff'; c.fillRect(0, 0, tw2, h);
+      if (cvs[0] && x > 0) c.drawImage(cvs[0], 0, 0, x / k, H, sd, 0, x, h); if (cvs[1] && w - x > 0) c.drawImage(cvs[1], x / k, 0, W - x / k, H, sd + x, 0, w - x, h);
+      c.save(); c.translate(sd, 0); c.lineJoin = 'round'; c.strokeStyle = '#00ffff'; c.shadowColor = 'rgba(0,255,255,0.95)';   // the pool: thin glowing cyan outline, no fill
+      st.rings.forEach(function (r) { c.beginPath(); r.forEach(function (p, i) { if (i) c.lineTo(p[0] * w, p[1] * h); else c.moveTo(p[0] * w, p[1] * h); }); c.closePath(); c.shadowBlur = 8 * k; c.lineWidth = 1.2 * k; c.stroke(); c.shadowBlur = 3 * k; c.stroke(); });
+      c.restore();
+      c.fillStyle = '#ffeb3b'; c.fillRect(sd + x - k, 0, 2 * k, h);
+      [0, 1].forEach(function (i) {                         // rotated side titles with a small stemless right-pointing triangle at their top end; cyan while hovered
+        var cx = (i === 0 ? side / 2 : side + W + side / 2) * k, text = label(st.sel[i]), col = (!exporting && hover === i) ? '#00e5ff' : '#222';
+        c.save(); c.font = 'bold ' + (11 * fs * k) + 'px Roboto, sans-serif'; var tw = c.measureText(text).width; c.translate(cx, h / 2); c.rotate(-Math.PI / 2); c.fillStyle = col; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(text, 0, 0); c.restore();
+        var s = 4.5 * fs * k, ty = Math.max(2 * s + 2 * k, h / 2 - tw / 2 - 5 * fs * k); c.fillStyle = col; c.beginPath(); c.moveTo(cx - 0.8 * s, ty - 2 * s); c.lineTo(cx - 0.8 * s, ty); c.lineTo(cx + s, ty - s); c.closePath(); c.fill();
+      });
+      if (exporting) { c.save(); c.font = (8 * fs * k) + 'px Roboto, sans-serif'; c.textAlign = 'right'; c.textBaseline = 'bottom'; c.shadowColor = 'rgba(0,0,0,0.9)'; c.shadowBlur = 2 * k; c.fillStyle = '#fff'; c.fillText('source: MassMarshViewer.com', sd + w - 3 * k, h - 2 * k); c.restore(); }
+    }
+    function frame(now) { if (!alive || !out.isConnected) { anim = null; return; } var ph = ((now - t0) / 4000) % 2; paintTo(ctx, 1, ph < 1 ? ph : 2 - ph, false); anim = requestAnimationFrame(frame); }
+    function sideAt(ev) { var r = out.getBoundingClientRect(); var x = (ev.clientX - r.left) * out.width / r.width; return x < side ? 0 : x > side + W ? 1 : -1; }
+    function closeMenu() { if (menu) { menu.remove(); menu = null; } }
+    function openMenu(i) {
+      closeMenu(); menu = el('div', 'pv-swipe-menu'); menu.appendChild(el('div', 'pv-swipe-menu-h', (i === 0 ? 'Left' : 'Right') + ' image'));
+      st.imgs.forEach(function (im) {
+        var it = el('div', 'pv-swipe-item' + (im.key === st.sel[i].key ? ' sel' : ''), label(im));
+        it.addEventListener('click', function (ev) { ev.stopPropagation(); closeMenu(); st.pick(i, im); }); menu.appendChild(it);
+      });
+      var r = out.getBoundingClientRect(), pr = parent.getBoundingClientRect(), scale = r.width / out.width;
+      menu.style.left = Math.round(r.left - pr.left + (i === 0 ? side : side + W + side) * scale) + 'px'; menu.style.top = Math.round(r.top - pr.top + 4) + 'px'; parent.appendChild(menu);
+      var mw = menu.offsetWidth; if (menu.offsetLeft + mw > parent.clientWidth) menu.style.left = Math.max(0, parent.clientWidth - mw) + 'px';
+    }
+    out.addEventListener('mousemove', function (ev) { var s = sideAt(ev); if (s !== hover) { hover = s; out.style.cursor = s >= 0 ? 'pointer' : ''; } });
+    out.addEventListener('mouseleave', function () { hover = -1; out.style.cursor = ''; });
+    out.addEventListener('click', function (ev) { ev.stopPropagation(); var s = sideAt(ev); if (s >= 0) openMenu(s); else closeMenu(); });
+    v.closeIfOutside = function (ev) { if (menu && !menu.contains(ev.target) && ev.target !== out) closeMenu(); };
+    if (!SW.docClick) { SW.docClick = true; document.addEventListener('click', function (ev) { (SW.views || []).forEach(function (x) { x.closeIfOutside(ev); }); }); }
+    v.gif = function (btn) {                                   // one sweep left -> right -> left, 40 frames at 100 ms, at most 700 px on the long side, encoded in the browser (gifenc)
+      btn.disabled = true; btn.textContent = 'Encoding GIF...';
+      var k = Math.min(1, 700 / Math.max(out.width, out.height)); var gw = Math.round(out.width * k), gh = Math.round(H * k); var gc = document.createElement('canvas'); gc.width = gw; gc.height = gh; var g2 = gc.getContext('2d');
+      import('https://cdn.jsdelivr.net/npm/gifenc@1.0.3/+esm').then(function (G) {
+        var enc = G.GIFEncoder(); var N = 40;
+        for (var j = 0; j < N; j++) { var fr = j / (N - 1); paintTo(g2, k, j < N / 2 ? fr * 2 : 2 - fr * 2, true); var data = g2.getImageData(0, 0, gw, gh).data; var pal = G.quantize(data, 256); var idx = G.applyPalette(data, pal); enc.writeFrame(idx, gw, gh, { palette: pal, delay: 100, repeat: 0 }); }
+        enc.finish(); var blob = new Blob([enc.bytes()], { type: 'image/gif' }); var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'pool_' + st.f.properties.st + '_' + st.f.properties.pid + '_' + String(st.sel[0].year).slice(0, 4) + '_vs_' + String(st.sel[1].year).slice(0, 4) + '.gif'; a.click();
+        btn.disabled = false; btn.textContent = 'Download GIF';
+      }).catch(function (e) { btn.disabled = false; btn.textContent = 'Download GIF'; if (o.caption) o.caption.textContent += ' (GIF encoding failed: ' + e.message + ')'; });
+    };
+    v.destroy = function () { alive = false; if (anim) cancelAnimationFrame(anim); closeMenu(); if (out.parentNode) out.parentNode.removeChild(out); var i = st.views.indexOf(v); if (i >= 0) st.views.splice(i, 1); };
+    st.views.push(v);
+    Promise.all([load(0), load(1)]).then(function () { if (!alive) return; if (o.note) o.note.remove(); caption(); anim = requestAnimationFrame(frame); }).catch(function (e) { if (o.note) o.note.textContent = 'Imagery not available: ' + e.message; else if (o.caption) o.caption.textContent = 'Imagery not available: ' + e.message; });
+    return v;
+  }
+  function openSwipeModal(st) {                                // the swipe near full-window size: same images, titles, menus; Download GIF; X / Esc / backdrop closes
+    var ov = el('div', 'pv-chart-modal'); var box = el('div', 'pv-chart-modal-box'); ov.appendChild(box);
+    var x = el('button', 'pv-chart-modal-x'); x.type = 'button'; x.title = 'Close'; x.innerHTML = MM.ICONS.x; box.appendChild(x);
+    var holder = el('div', 'pv-swipe pv-swipe-big'); box.appendChild(holder); var cap = el('div', 'pv-caption'); box.appendChild(cap);
+    var foot = el('div', 'pv-chart-modal-foot'); var gb = button('Download GIF', function () { view.gif(gb); }); foot.appendChild(gb); box.appendChild(foot);
+    document.body.appendChild(ov);
+    var availW = box.clientWidth - 48, availH = Math.max(200, box.clientHeight - foot.offsetHeight - 36 - 14 - 40); var fs = 1.6, side = Math.round(18 * fs);
+    var W = Math.max(120, Math.min(availW - 2 * side, Math.round(availH * st.wM / st.hM)));
+    var view = swipeView(holder, st, { size: W, fontScale: fs, maxH: availH, caption: cap });
+    function onKey(e) { if (e.key === 'Escape') close(); }
+    function close() { view.destroy(); if (ov.parentNode) ov.parentNode.removeChild(ov); document.removeEventListener('keydown', onKey); }
+    x.addEventListener('click', close); ov.addEventListener('click', function (e) { if (e.target === ov) close(); }); document.addEventListener('keydown', onKey);
   }
 
   // ---------- Multi ----------
