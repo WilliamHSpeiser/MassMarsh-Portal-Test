@@ -104,8 +104,7 @@
       MM.addToolLayer('selectedPool', MM.glowLayer(f));            // thin glowing cyan outline, like the swipe
       var fit = MM.fitSeries(pts);
       var info = [el('div', 'pv-h lg', 'Pool Information'), el('div', 'pv-small', 'Lat: ' + latlng.lat.toFixed(5) + ', Lon: ' + latlng.lng.toFixed(5)),
-        el('div', 'pv-h lg', 'Mean ' + valueLabel(pts) + ' Slope: ' + (fit.slope !== null && fit.slope !== undefined ? fit.slope.toFixed(6) + ' /year' : 'n/a')), el('div', 'pv-note', '(Calculated from averaged time series)'), el('div', 'pv-small', 'Valid observations: ' + pts.length)];
-      info.push(el('div', 'pv-small', 'Stored trend: ' + MM.poolStatsLine(p, S.opts.satellite, chartSeason())));
+        el('div', 'pv-h lg', 'Mean ' + valueLabel(pts) + ' Slope: ' + (fit.slope !== null && fit.slope !== undefined ? fit.slope.toFixed(6) + ' /year' : 'n/a')), el('div', 'pv-note', '(Least-squares trend of the pool-mean series' + (function () { var q = MM.poolSlopeProps(S.opts.satellite, chartSeason()); var t = p[q.t]; return (t !== null && t !== undefined) ? '; t = ' + Number(t).toFixed(2) + (Math.abs(t) >= 2 ? ', significant' : ', not significant') : ''; })() + ')'), el('div', 'pv-small', 'Valid observations: ' + pts.length)];
       if (s2() && !P.raw && pts.referenced === false && pts.length) { var rw = el('div', 'pv-note', 'No marsh reference is available for this pool (series filled from the pixel cube); raw MNDWI is plotted.'); rw.style.color = '#e65100'; info.push(rw); }
       if (!pts.length) { P.panel.showError(info, 'No ' + SEASONS[chartSeason()].scenesWord + ' over this selection.'); return; }
       P.panel.setSeries(pts, info, P.scenes ? P.scenes[chartSeason() + (s2() ? '_s2' : '')] : null, { season: chartSeason(), lat: latlng.lat, onSeason: function (k) { P.chartSeason = k; if (P.last) monoClick(P.last.f, P.last.latlng); } });

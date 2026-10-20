@@ -85,7 +85,8 @@ window.MM = (function () {
   // pools/index.json; workstation copies under data/pool-viewer/pools for ?local=1). load('pools') merges the state files whose extent
   // touches the current selection (plus a margin), so Massachusetts work loads MA and its neighbours only.
   var poolFiles = {}, poolIndex = null;
-  function poolsUrl(name) { return LOCAL ? DATA.pool + 'pools/' + name : serverUrl('pools/' + name + '?v=' + DATA_VERSION); }
+  function dataV() { return S.dataStamp || DATA_VERSION; }   // server-side data stamp (marsh01 version.json, written by the satellite update) or the code version
+  function poolsUrl(name) { return LOCAL ? DATA.pool + 'pools/' + name : serverUrl('pools/' + name + '?v=' + dataV()); }
   function loadPoolsFor(bbox) {
     if (!poolIndex) poolIndex = getJSON(poolsUrl('index.json')).catch(function (e) { poolIndex = null; throw e; });
     return poolIndex.then(function (idx) {
@@ -101,15 +102,15 @@ window.MM = (function () {
       });
     });
   }
-  var DATA_VERSION = '20261020h';          // bumped when the repo data files change (server-side files are not versioned)
+  var DATA_VERSION = '20261020i';          // bumped when the repo data files change (server-side files are not versioned)
   function getJSON(url) { var u = url.indexOf(DATA_BASE) === 0 ? url + '?v=' + DATA_VERSION : url; return fetch(u).then(function (r) { if (!r.ok) throw new Error(r.status + ' ' + url); return r.json(); }); }
   function load(name) {
     if (name === 'pools') return loadPoolsFor(S.selection ? S.selection.bbox : [-71.3, 41.2, -69.9, 42.9]);
     if (cache[name]) return cache[name];
     var urls = {
       complexes: DATA.pool + 'ma_complexes.geojson', cpools: DATA.pool + 'ma_complex_pools.json', cscenes: DATA.pool + 'ma_complex_scenes.json',
-      ditches: DATA.ditch + 'ma_ditches.geojson', cditches: DATA.ditch + 'ma_complex_ditches.json',
-      units: DATA.portal + 'ma_units.geojson', bboxes: DATA.portal + 'ma_bboxes.geojson', cunits: DATA.portal + 'ma_complex_units.json',
+      ditches: (LOCAL ? DATA.ditch + 'ma_ditches.geojson' : serverUrl('ditches/ma_ditches.geojson?v=' + dataV())), cditches: DATA.ditch + 'ma_complex_ditches.json',
+      units: (LOCAL ? DATA.portal + 'ma_units.geojson' : serverUrl('units/ma_units.geojson?v=' + dataV())), bboxes: DATA.portal + 'ma_bboxes.geojson', cunits: DATA.portal + 'ma_complex_units.json',
       upools: DATA.portal + 'ma_unit_pools.json', uditches: DATA.portal + 'ma_unit_ditches.json', utidal: DATA.portal + 'ma_unit_tidal.json', uvegfrac: DATA.portal + 'ma_unit_vegfrac.json',
       rasters: DATA.raster + 'rasters.json'
     };
@@ -124,11 +125,11 @@ window.MM = (function () {
   // first MassMarsh web server that answers (cube index is the probe); the same base then serves imagery, lidar, vegfrac
   var serverReady = (function tryHost(i) {
     var base = LOCAL ? LOCAL_HOST : HOSTS[i];
-    return getJSON(base + CUBES['Landsat'].dir + 'cube_index.json').then(function (idx) { S.serverBase = base; S.cubeIndex = idx; S.cubes['Landsat'] = idx; return base; })
+    return getJSON(base + CUBES['Landsat'].dir + 'cube_index.json?t=' + Date.now()).then(function (idx) { S.serverBase = base; S.cubeIndex = idx; S.cubes['Landsat'] = idx; return base; })
       .catch(function () { return (!LOCAL && i + 1 < HOSTS.length) ? tryHost(i + 1) : (S.serverBase = null, S.cubeIndex = {}, S.cubes['Landsat'] = {}, null); });
   })(0).then(function (base) {                                // the Sentinel-2 cube is optional: tools enable the sensor when its index exists
     if (!base) { S.cubes['Sentinel-2'] = {}; return base; }
-    return getJSON(base + CUBES['Sentinel-2'].dir + 'cube_index.json').then(function (idx) { S.cubes['Sentinel-2'] = idx; }).catch(function () { S.cubes['Sentinel-2'] = {}; }).then(function () { return base; });
+    return getJSON(base + CUBES['Sentinel-2'].dir + 'cube_index.json?t=' + Date.now()).then(function (idx) { S.cubes['Sentinel-2'] = idx; }).catch(function () { S.cubes['Sentinel-2'] = {}; }).then(function () { return base; });
   });
   function serverUrl(path) { return (S.serverBase || HOSTS[0]) + path; }
   var MAX_SHARDS = 12, shardCache = {}, shardPending = {};
@@ -147,7 +148,7 @@ window.MM = (function () {
   function seriesUrl(kind, sensor, name) {
     var dir = seriesDir(sensor);
     if (LOCAL) return (kind === 'pool' ? DATA.pool + dir + 'ma/' : DATA.portal + dir + kind + '/') + name + '.json';
-    return serverUrl(dir + (kind === 'pool' ? 'pool/ma/' : kind + '/') + name + '.json?v=' + DATA_VERSION);
+    return serverUrl(dir + (kind === 'pool' ? 'pool/ma/' : kind + '/') + name + '.json?v=' + dataV());
   }
   function loadPoolSeries(pid, sensor) { return loadShard(seriesUrl('pool', sensor, Math.floor(pid / 100))).catch(function (e) { if (/^40[34] /.test(e.message)) return {}; throw e; }).then(function (d) { return d[pid] || []; }); }
   function loadComplexSeries(cx, sensor) { return loadShard(seriesUrl('complexes', sensor, cx)); }
@@ -165,9 +166,9 @@ window.MM = (function () {
   // stored-trend sentence for a pool under the active satellite (season: summer | all)
   function poolStatsLine(p, sensor, season) {
     var ds = poolDataset(sensor), q = poolSlopeProps(sensor, season); var sl = p[q.sl];
-    if (sl === null || sl === undefined) return 'No ' + ds.shortLabel + ' slope stored for this pool (stored trend: ' + (p[q.tr] || 'no data') + ').';
+    if (sl === null || sl === undefined) return 'No ' + ds.shortLabel + ' trend for this pool (fewer than 14 scenes).';
     var s = ds.label + ': slope ' + sl.toFixed(5) + ' ' + ds.units; if (p[q.t] !== null && p[q.t] !== undefined) s += ' | t = ' + Number(p[q.t]).toFixed(2); if (p[q.n]) s += ' | n = ' + p[q.n] + (season === 'all' ? ' scenes' : ' summer scenes');
-    return s + ' | ' + (p[q.tr] || (sl > 0 ? 'wetter' : 'drier')) + (p[q.sig] === 1 ? ', significant (|t| >= 2)' : ', not significant (|t| < 2)');
+    return s + (p[q.sig] === 1 ? ' (significant)' : ' (not significant)');
   }
   // enable the Sentinel-2 option of a satellite <select> once its series cube is reachable (extra: optional function returning a promise of a boolean)
   function enableSentinel2(sel, extra) {
@@ -593,7 +594,7 @@ window.MM = (function () {
   function tideStationFor(lat) { return lat >= 41.67 ? '8443970' : '8447930'; }   // Chatham / Nauset (~41.67 N) splits the two regimes
   var tideCache = {};
   function tideTable(station) {                              // tides/<station>.json: daily water level (m MLLW) at the ~15:30 UTC overpass + datums
-    if (!tideCache[station]) tideCache[station] = fetch(serverUrl('tides/' + station + '.json?v=' + DATA_VERSION)).then(function (r) { if (!r.ok) throw new Error('tide table HTTP ' + r.status); return r.json(); }).then(function (t) { t.epochMs = Date.parse(t.epoch + 'T00:00:00Z'); return t; });
+    if (!tideCache[station]) tideCache[station] = fetch(serverUrl('tides/' + station + '.json?v=' + dataV())).then(function (r) { if (!r.ok) throw new Error('tide table HTTP ' + r.status); return r.json(); }).then(function (t) { t.epochMs = Date.parse(t.epoch + 'T00:00:00Z'); return t; });
     return tideCache[station];
   }
   function tideLevel(tab, ms) { var i = Math.round((ms - tab.epochMs) / 86400000); var v = tab.levels[i]; return (v === null || v === undefined) ? null : v; }
@@ -954,6 +955,7 @@ window.MM = (function () {
   }
   var IMG_SOURCE = { MassGIS: 'MassGIS', NHAP: 'NHAP', CapeCod: 'Cape Cod', AutoGeoreferencer: 'Georeferenced aerials', NAIP: 'NAIP' };
   var basemap = null, basemapLayer = null, catalogP = null, measureCtl = null, basemapCtl = null;
+  var stampReady = serverReady.then(function () { return fetch(serverUrl('version.json?t=' + Date.now()), { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (v) { if (v && v.data) S.dataStamp = String(v.data); }).catch(function () {}); });
   function imageryCatalog() { if (!catalogP) catalogP = serverReady.then(function () { return getJSON(serverUrl('imagery/catalog.json')); }).catch(function (e) { catalogP = null; throw e; }); return catalogP; }
   function catYear(im) { var t = String(im.year), m = t.match(/(\d{4})/); return m ? +m[1] + (/\ds\b/.test(t) ? 5 : 0) : 9999; }
   function areaBbox() { if (S.selection) return S.selection.bbox; var b = map.getBounds(); return [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]; }
@@ -1039,7 +1041,7 @@ window.MM = (function () {
     var c = cube(sensor); var ck = c.dir + key;
     if (S.blockCache[ck]) { S.blockCache[ck]._t = Date.now(); return S.blockCache[ck]; }
     var keys = Object.keys(S.blockCache); if (keys.length > MAX_BLOCKS) { keys.sort(function (a, b) { return S.blockCache[a]._t - S.blockCache[b]._t; }); keys.slice(0, keys.length - MAX_BLOCKS).forEach(function (k) { delete S.blockCache[k]; }); }
-    var p = fetch(serverUrl(c.dir + key + '.bin')).then(function (r) { if (!r.ok) throw new Error('no series block'); return r.arrayBuffer(); }).then(function (buf) {
+    var p = fetch(serverUrl(c.dir + key + '.bin?v=' + dataV())).then(function (r) { if (!r.ok) throw new Error('no series block'); return r.arrayBuffer(); }).then(function (buf) {
       var dv = new DataView(buf); var hl = dv.getUint32(0, true);
       var hdr = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 4, hl)));
       hdr.data = new Int16Array(buf.slice(4 + hl)); hdr.npix = hdr.pixels.length; hdr.nsc = hdr.days.length; hdr.res = c.res;
@@ -1123,7 +1125,7 @@ window.MM = (function () {
   var serverRasters = {};
   function openServerRaster(path) {                        // georaster URL mode: header only, windows are read through HTTP range requests
     if (serverRasters[path]) return serverRasters[path];
-    var p = parseGeoraster(serverUrl(path)).catch(function (e) { delete serverRasters[path]; throw e; }); serverRasters[path] = p; return p;
+    var p = parseGeoraster(serverUrl(path + '?v=' + dataV())).catch(function (e) { delete serverRasters[path]; throw e; }); serverRasters[path] = p; return p;
   }
   // in-memory georaster (every band) covering a lon/lat bbox of a server COG, read through the overview that keeps it under maxPx per side
   function loadServerRaster(path, bbox, maxPx) {

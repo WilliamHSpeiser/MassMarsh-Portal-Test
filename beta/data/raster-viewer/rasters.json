@@ -28,7 +28,9 @@
   "size_mb": 4.4,
   "p2": -0.004400923848152161,
   "p98": 0.007051879931241271,
-  "exported": "2026-10-19 21:57 UTC"
+  "exported": "2026-10-19 21:57 UTC",
+  "server": "rasters/Landsat_MNDWI.tif",
+  "note": "served from marsh01; recomputed from the pixel cube by the satellite update (OLS per pixel, all scenes >= 1985, >= 14 obs)"
  },
  "Landsat_NDWI": {
   "key": "Landsat_NDWI",
@@ -59,7 +61,9 @@
   "size_mb": 4.4,
   "p2": -0.0044887493923306465,
   "p98": 0.007108208294957874,
-  "exported": "2026-10-19 21:59 UTC"
+  "exported": "2026-10-19 21:59 UTC",
+  "server": "rasters/Landsat_NDWI.tif",
+  "note": "served from marsh01; recomputed from the pixel cube by the satellite update (OLS per pixel, all scenes >= 1985, >= 14 obs)"
  },
  "Landsat_NDVI": {
   "key": "Landsat_NDVI",
@@ -90,7 +94,9 @@
   "size_mb": 4.4,
   "p2": -0.006429043412208557,
   "p98": 0.0047616190277040005,
-  "exported": "2026-10-19 22:01 UTC"
+  "exported": "2026-10-19 22:01 UTC",
+  "server": "rasters/Landsat_NDVI.tif",
+  "note": "served from marsh01; recomputed from the pixel cube by the satellite update (OLS per pixel, all scenes >= 1985, >= 14 obs)"
  },
  "Sentinel-2_MNDWI": {
   "key": "Sentinel-2_MNDWI",
