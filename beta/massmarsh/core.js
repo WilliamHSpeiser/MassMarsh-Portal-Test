@@ -182,13 +182,23 @@ window.MM = (function () {
   function clearSide() { side.innerHTML = ''; mapLegend(null); }
   function titlePanel(sub) { var t = el('div', 'pv-title'); t.appendChild(el('span', 'brand', 'MassMarsh:')); t.appendChild(el('span', 'sub', sub)); add(t); add(el('div', 'pv-divider')); }
   function thin(cls) { return add(el('div', 'pv-thin' + (cls ? ' ' + cls : ''))); }
-  function button(label, cb, cls) { var b = el('button', cls || '', label); b.addEventListener('click', cb); return b; }
+  function button(label, cb, cls) { var b = el('button', cls || ''); if (/^\u2190 /.test(label)) { var ar = el('span', 'pv-arrow', '\u2190'); b.appendChild(ar); b.appendChild(document.createTextNode(label.slice(1))); } else b.textContent = label; b.addEventListener('click', cb); return b; }
   function setStatus(e, text, color, italic) { e.textContent = text; e.style.color = color || '#666'; e.style.fontStyle = italic ? 'italic' : 'normal'; e.style.fontWeight = color === 'green' ? 'bold' : 'normal'; e.style.fontSize = '11px'; }
   function fmtDate(ms) { return new Date(ms).toISOString().slice(0, 10); }
   function todayStr() { return new Date().toISOString().slice(0, 10); }
   function labelWithInfo(text, info) {                        // heading followed by a circled i: hover (or focus) shows the explanation as a tooltip
     var wrap = el('div'); var row = el('div', 'pv-section', text); var i = el('span', 'pv-info-i', 'i'); i.tabIndex = 0; i.setAttribute('role', 'note'); row.appendChild(i); wrap.appendChild(row);
-    var p = el('div', 'pv-tip'); p.textContent = info; i.appendChild(p);
+    var tip = null;
+    function hide() { if (tip && tip.parentNode) tip.parentNode.removeChild(tip); tip = null; }
+    function show() {
+      hide(); tip = el('div', 'pv-tip'); tip.textContent = info; document.body.appendChild(tip);
+      var r = i.getBoundingClientRect(); var w = Math.min(340, window.innerWidth - 24); tip.style.width = w + 'px';
+      var left = r.right + 10; if (left + w > window.innerWidth - 8) left = Math.max(8, r.left - w - 10);
+      tip.style.left = left + 'px'; tip.style.top = (r.top - 8) + 'px';
+      var h = tip.offsetHeight; if (r.top - 8 + h > window.innerHeight - 8) tip.style.top = Math.max(8, window.innerHeight - 8 - h) + 'px';
+    }
+    i.addEventListener('mouseenter', show); i.addEventListener('mouseleave', hide); i.addEventListener('focus', show); i.addEventListener('blur', hide);
+    side.addEventListener('scroll', hide);
     return add(wrap);
   }
   function citation(text) { thin('light'); var c = add(el('div', 'pv-credit', text)); c.style.color = '#888'; return c; }
@@ -697,7 +707,11 @@ window.MM = (function () {
     function finish() {
       var p = lls(); var text = readout(); stopDraw();
       if ((kind === 'line' && p.length < 2) || (kind !== 'line' && p.length < 3)) return;
-      var lyr = shapeOf(p, true); lyr.bindTooltip(text.replace(/\n/g, '<br>'), { permanent: true, direction: 'center', className: 'pv-measure-result' }); measureLayer.addLayer(lyr);
+      var lyr = shapeOf(p, true);
+      lyr.bindTooltip('<span class="pv-measure-x" title="Delete this measurement">\u00d7</span>' + text.replace(/\n/g, '<br>'), { permanent: true, direction: 'center', className: 'pv-measure-result', interactive: true });
+      lyr.on('tooltipopen', function (ev) { var x = ev.tooltip.getElement().querySelector('.pv-measure-x'); if (x) x.addEventListener('click', function (e) { e.stopPropagation(); measureLayer.removeLayer(lyr); }); });
+      lyr.on('click', function (e) { L.DomEvent.stop(e); var t = lyr.getTooltip() && lyr.getTooltip().getElement(); if (t) t.classList.toggle('sel'); });
+      measureLayer.addLayer(lyr);
     }
     if (kind === 'rectangle') {
       map.dragging.disable();

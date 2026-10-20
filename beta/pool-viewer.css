@@ -76,8 +76,7 @@ html, body { height: 100%; margin: 0; }
 .pv-tool-switch { background: rgba(255,255,255,0.8); font: bold 13px Roboto, sans-serif; padding: 5px 6px; border-radius: 4px; border: 1px solid #bbb; }
 .pv-info-i { display: inline-flex; width: 16px; height: 16px; flex: none; border-radius: 50%; border: 1.5px solid #9aa3ad; color: #9aa3ad; font: bold 11px Georgia, serif; font-style: italic; line-height: 1; align-items: center; justify-content: center; cursor: help; position: relative; }
 .pv-info-i:hover, .pv-info-i:focus { border-color: #00bcd4; color: #00bcd4; outline: none; }
-.pv-info-i .pv-tip { display: none; position: absolute; left: 22px; top: -8px; z-index: 60; width: 320px; max-width: 60vw; background: #fff; border: 1px solid #cfd8dc; box-shadow: 0 2px 8px rgba(0,0,0,0.25); padding: 8px 10px; border-radius: 4px; font: normal 12px Roboto, sans-serif; font-style: normal; color: #333; white-space: pre-wrap; text-align: left; cursor: default; }
-.pv-info-i:hover .pv-tip, .pv-info-i:focus .pv-tip { display: block; }
+.pv-tip { position: fixed; z-index: 6000; background: #fff; border: 1px solid #cfd8dc; box-shadow: 0 2px 10px rgba(0,0,0,0.3); padding: 8px 10px; border-radius: 4px; font: normal 12px Roboto, sans-serif; font-style: normal; color: #333; white-space: pre-wrap; text-align: left; pointer-events: none; }
 .pv-map-legend { position: absolute; left: 10px; bottom: 26px; z-index: 800; background: rgba(255,255,255,0.85); padding: 6px 10px; border-radius: 4px; box-shadow: 0 1px 4px rgba(0,0,0,0.3); pointer-events: none; font: 12px Roboto, sans-serif; }
 .pv-map-legend .pv-h { margin: 0 0 4px 0; }
 .pv-maptool { position: relative; }
@@ -106,3 +105,9 @@ html, body { height: 100%; margin: 0; }
 .pv-search-item { padding: 6px 10px; font: 12px Roboto, sans-serif; color: #333; cursor: pointer; border-bottom: 1px solid #eee; }
 .pv-search-item:hover { background: #e0f7fa; }
 .pv-search-note { padding: 6px 10px; font: italic 11px Roboto, sans-serif; color: #777; }
+.pv-back { display: block; margin-top: 8px; }
+.pv-arrow { font-weight: 700; display: inline-block; position: relative; top: -1px; margin-right: 2px; font-size: 1.05em; }
+.pv-measure-result { padding: 4px 18px 4px 8px; }
+.pv-measure-result .pv-measure-x { display: none; position: absolute; right: 2px; top: -1px; font: bold 15px Roboto, sans-serif; color: #b71c1c; cursor: pointer; line-height: 1; padding: 0 3px; }
+.pv-measure-result.sel .pv-measure-x { display: block; }
+.pv-measure-result.sel { border-width: 2px; }
