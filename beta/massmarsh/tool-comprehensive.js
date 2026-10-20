@@ -144,7 +144,7 @@
         var slopes = feats.map(function (f) { return MM.poolSlopeOf(f.properties); }).filter(function (v) { return v !== null && v !== undefined; });
         var rr = slopes.length ? Math.max(Math.abs(MM.percentile(slopes, 0.02)), Math.abs(MM.percentile(slopes, 0.98))) : 0; if (!rr) rr = 0.03; C.poolRange = rr;
         showFeatureLayer(feats, function (f) { var v = MM.poolSlopeOf(f.properties); if (v === null || v === undefined) return { color: '#888888', fillColor: '#888888', fillOpacity: 0.2, weight: 1 }; var c = threeColour(v, -rr, rr); return { color: c, fillColor: c, fillOpacity: 0.53, weight: 1 }; }, 'Pool');
-        setStatus(ui.status, 'Loaded ' + feats.length + ' pools; ' + slopes.length + ' coloured by ' + MM.poolDataset().label + ' (range +-' + rr.toFixed(4) + '), ' + (feats.length - slopes.length) + ' grey (no stored slope). Click a pool for its ' + S.opts.satellite + ' ' + S.opts.index + ' summer time series. (' + ((Date.now() - t0) / 1000).toFixed(1) + ' s)', 'green');
+        setStatus(ui.status, 'Loaded ' + feats.length + ' pools; ' + slopes.length + ' coloured by ' + MM.poolDataset().label + ' (range +-' + rr.toFixed(4) + '), ' + (feats.length - slopes.length) + ' grey (no trend). Click a pool for its ' + S.opts.satellite + ' ' + S.opts.index + ' summer time series. (' + ((Date.now() - t0) / 1000).toFixed(1) + ' s)', 'green');
       }).catch(function (e) { setStatus(ui.status, 'Error loading pools: ' + e.message, '#c00'); });
     }
   }
