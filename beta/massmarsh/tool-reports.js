@@ -280,20 +280,45 @@
     thin('light'); MM.backButton(MM.showLanding);
     function htmlLink(label) { var a = el('a', 'dl', label); a.href = URL.createObjectURL(new Blob([html], { type: 'text/html' })); a.download = filename; a.style.cssText = 'display:block;font-size:12px'; links.appendChild(a); }
     if (typeof jspdf === 'undefined' || typeof html2canvas === 'undefined') { st.textContent = 'PDF conversion is not available on this page; the HTML report is below.'; htmlLink('\u2b07 Download ' + filename); return; }
-    var holder = el('div'); holder.style.cssText = 'position:fixed;left:-10000px;top:0;width:900px;background:#fff;color:#333';
+    var holder = el('div'); holder.style.cssText = 'position:absolute;left:0;top:0;width:900px;background:#fff;color:#333;z-index:-1;opacity:1';   // on-screen behind the page: off-screen elements render blank in some browsers
     var body = html.replace(/^[\s\S]*?<body[^>]*>/i, '').replace(/<\/body>[\s\S]*$/i, ''); var css = (html.match(/<style>([\s\S]*?)<\/style>/i) || [])[1] || '';
     holder.innerHTML = '<style>' + css.replace(/body\s*\{[^}]*\}/, '') + '</style>' + body; document.body.appendChild(holder);
-    setTimeout(function () {
+    rasterizeSvgs(holder).then(function () { setTimeout(function () {
       try {
         var doc = new jspdf.jsPDF({ unit: 'pt', format: 'letter', compress: true });
-        doc.html(holder, { x: 24, y: 24, width: 564, windowWidth: 900, autoPaging: 'text', margin: [24, 24, 24, 24], html2canvas: { scale: 564 / 900, useCORS: true, logging: false },
+        doc.html(holder, { x: 24, y: 24, width: 564, windowWidth: 900, autoPaging: 'text', margin: [24, 24, 24, 24], html2canvas: { scale: 564 / 900, useCORS: true, allowTaint: true, backgroundColor: '#ffffff', logging: false, scrollX: 0, scrollY: 0, windowWidth: 900 },
           callback: function (pdf) {
             if (holder.parentNode) holder.parentNode.removeChild(holder);
             var url = URL.createObjectURL(pdf.output('blob')); st.textContent = 'Click the link below (or right-click and choose "Save Link As").'; st.style.color = '';
             var a = el('a', 'dl', '\u2b07 Download ' + pdfName); a.href = url; a.download = pdfName; a.style.display = 'block'; links.appendChild(a); htmlLink('HTML version: ' + filename);
           } });
       } catch (e) { if (holder.parentNode) holder.parentNode.removeChild(holder); st.textContent = 'PDF conversion failed (' + e.message + '); the HTML report is below.'; st.style.color = '#c00'; htmlLink('\u2b07 Download ' + filename); }
-    }, 50);
+    }, 50); });
+  }
+  // html2canvas leaves inline SVG charts as empty boxes in the PDF: draw each chart to a canvas (2x) and swap in a PNG image first
+  function rasterizeSvgs(root) {
+    var svgs = Array.prototype.slice.call(root.querySelectorAll('svg'));
+    return Promise.all(svgs.map(function (svg) {
+      return new Promise(function (resolve) {
+        var w = parseFloat(svg.getAttribute('width')) || svg.clientWidth || 400, h = parseFloat(svg.getAttribute('height')) || svg.clientHeight || 200, style = svg.getAttribute('style') || '';
+        var bg = (style.match(/background:\s*(#[0-9a-fA-F]{3,6}|[a-z]+)/) || [])[1] || '#ffffff';
+        var clone = svg.cloneNode(true); clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg'); clone.setAttribute('width', w); clone.setAttribute('height', h); clone.removeAttribute('style');
+        var img = new Image(), done = false;
+        function finish(ok) {
+          if (done) return; done = true;
+          if (!ok) { resolve(); return; }
+          try {
+            var c = document.createElement('canvas'); c.width = Math.round(w * 2); c.height = Math.round(h * 2); var ctx = c.getContext('2d');
+            ctx.fillStyle = bg; ctx.fillRect(0, 0, c.width, c.height); ctx.drawImage(img, 0, 0, c.width, c.height);
+            var out = document.createElement('img'); out.src = c.toDataURL('image/png'); out.width = w; out.height = h; out.style.cssText = style; svg.parentNode.replaceChild(out, svg);
+          } catch (e) { /* keep the SVG */ }
+          resolve();
+        }
+        img.onload = function () { finish(true); }; img.onerror = function () { finish(false); };
+        setTimeout(function () { finish(false); }, 4000);
+        img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(new XMLSerializer().serializeToString(clone));
+      });
+    }));
   }
   function reportFrame(title, w) {
     return '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + title + '</title><style>body{font-family:Arial,sans-serif;max-width:900px;margin:0 auto;padding:20px;color:#333}h1{color:#881c1c;border-bottom:3px solid #881c1c;padding-bottom:10px}h2{color:#333;border-bottom:1px solid #999;padding-bottom:5px;margin-top:30px}h3{color:#555}.header{text-align:center;margin-bottom:30px}.stats-table{width:100%;border-collapse:collapse;margin:15px 0}.stats-table th,.stats-table td{border:1px solid #ddd;padding:10px;text-align:left}.stats-table th{background:#f5f5f5}.map-container img{max-width:100%;border:1px solid #ddd;border-radius:4px}.legend-bar{width:200px;height:20px;background:linear-gradient(to right,' + w.grad + ')}.legend-bar-pool{width:200px;height:20px;background:linear-gradient(to right,' + POOL_D.grad + ')}.legend-labels{width:200px;display:flex;justify-content:space-between;font-size:10px}.positive{color:' + w.repPos + '}.negative{color:' + w.repNeg + '}.footer{margin-top:40px;padding-top:20px;border-top:1px solid #ddd;font-size:11px;color:#666;text-align:center}@media print{body{max-width:none}.map-container{page-break-inside:avoid}}</style></head><body>';

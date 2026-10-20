@@ -147,17 +147,30 @@
         var out = el('canvas'); out.width = W + 2 * side; out.height = H; out.style.cssText = 'max-width:100%;display:block;border:1px solid #999;background:#fff'; container.appendChild(out);
         var cap = el('div', 'pv-note', 'Pool ' + f.properties.st + '-' + f.properties.pid + ': box ' + Math.round(wM) + ' x ' + Math.round(hM) + ' m (pool bounds + 15 m). Left: ' + old.year + ' ' + (SRC_LABEL[old.source] || old.source) + '; right: ' + nw.year + ' ' + (SRC_LABEL[nw.source] || nw.source) + '. The divider sweeps automatically.'); container.appendChild(cap);
         var ctx = out.getContext('2d'); var t0 = performance.now();
-        function label(text, x, align) { ctx.save(); ctx.translate(x, H / 2); ctx.rotate(-Math.PI / 2); ctx.fillStyle = '#222'; ctx.font = 'bold 11px Roboto, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(text, 0, 0); ctx.restore(); }
+        function label(text, x) { ctx.save(); ctx.translate(x, H / 2); ctx.rotate(-Math.PI / 2); ctx.fillStyle = '#222'; ctx.font = 'bold 11px Roboto, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(text, 0, 0); ctx.restore(); }
+        function paint(frac) {                                // one swipe position, frac 0..1 of the width
+          var x = Math.round(frac * W);
+          ctx.clearRect(0, 0, out.width, H); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, out.width, H);
+          if (x > 0) ctx.drawImage(cvs[0], 0, 0, x, H, side, 0, x, H); if (W - x > 0) ctx.drawImage(cvs[1], x, 0, W - x, H, side + x, 0, W - x, H);
+          ctx.fillStyle = '#ffeb3b'; ctx.fillRect(side + x - 1, 0, 2, H);
+          label(old.year + ' \u2013 ' + (SRC_LABEL[old.source] || old.source), side / 2); label(nw.year + ' \u2013 ' + (SRC_LABEL[nw.source] || nw.source), side + W + side / 2);
+        }
         function frame(now) {
           if (seq !== SW.seq || !out.isConnected) { SW.anim = null; return; }
-          var ph = ((now - t0) / 4000) % 2; var frac = ph < 1 ? ph : 2 - ph; var x = Math.round(frac * W);
-          ctx.clearRect(0, 0, out.width, H); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, out.width, H);
-          ctx.drawImage(cvs[0], 0, 0, x, H, side, 0, x, H); ctx.drawImage(cvs[1], x, 0, W - x, H, side + x, 0, W - x, H);
-          ctx.fillStyle = '#ffeb3b'; ctx.fillRect(side + x - 1, 0, 2, H);
-          label(old.year + ' \u2013 ' + (SRC_LABEL[old.source] || old.source), side / 2, 'left'); label(nw.year + ' \u2013 ' + (SRC_LABEL[nw.source] || nw.source), side + W + side / 2, 'right');
+          var ph = ((now - t0) / 4000) % 2; paint(ph < 1 ? ph : 2 - ph);
           SW.anim = requestAnimationFrame(frame);
         }
         SW.anim = requestAnimationFrame(frame);
+        // GIF download: one sweep left -> right -> left, 40 frames at 100 ms, encoded in the browser (gifenc, loaded on demand)
+        var row = el('div', 'pv-row'); var gb = button('Download GIF', function () {
+          gb.disabled = true; gb.textContent = 'Encoding GIF...';
+          import('https://cdn.jsdelivr.net/npm/gifenc@1.0.3/+esm').then(function (G) {
+            var enc = G.GIFEncoder(); var N = 40;
+            for (var k = 0; k < N; k++) { var fr = k / (N - 1); paint(k < N / 2 ? fr * 2 : 2 - fr * 2); var data = ctx.getImageData(0, 0, out.width, H).data; var pal = G.quantize(data, 256); var idx = G.applyPalette(data, pal); enc.writeFrame(idx, out.width, H, { palette: pal, delay: 100, repeat: 0 }); }
+            enc.finish(); var blob = new Blob([enc.bytes()], { type: 'image/gif' }); var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'pool_' + f.properties.st + '_' + f.properties.pid + '_' + String(old.year).slice(0, 4) + '_vs_' + String(nw.year).slice(0, 4) + '.gif'; a.click();
+            gb.disabled = false; gb.textContent = 'Download GIF';
+          }).catch(function (e) { gb.disabled = false; gb.textContent = 'Download GIF'; cap.textContent += ' (GIF encoding failed: ' + e.message + ')'; });
+        }, 'small'); row.appendChild(gb); container.appendChild(row);
       });
     }).catch(function (e) { if (seq === SW.seq) note.textContent = 'Imagery not available: ' + e.message; });
   }

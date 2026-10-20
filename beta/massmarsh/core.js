@@ -65,10 +65,13 @@ window.MM = (function () {
   function registerTool(t) { tools[t.id] = t; toolOrder.push(t.id); return t; }
 
   // ---------- map ----------
-  var map = L.map('map', { preferCanvas: true, zoomControl: true }).setView([41.7, -70.5], 9);
+  // ONE canvas renderer for every vector layer. With preferCanvas alone, the first path added without an explicit renderer
+  // (the Box Select rectangle, drawing vertices, measurements...) made Leaflet create a second canvas above this one; that
+  // empty canvas then swallowed every click on the pools/units drawn below it ("only panning works" after a box select).
+  var canvas = L.canvas({ padding: 0.5, tolerance: 5 });
+  var map = L.map('map', { preferCanvas: true, renderer: canvas, zoomControl: true }).setView([41.7, -70.5], 9);
   L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Imagery: Esri, Maxar, Earthstar Geographics' }).addTo(map);
   L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, opacity: 0.9, zIndex: 5 }).addTo(map);
-  var canvas = L.canvas({ padding: 0.5, tolerance: 5 });
   var layers = { base: null, selected: null, highlight: null, drawn: null, tool: {} };
   function removeLayer(k) { if (layers[k]) { map.removeLayer(layers[k]); layers[k] = null; } }
   function addToolLayer(name, lyr) { removeToolLayer(name); layers.tool[name] = lyr; lyr.addTo(map); if (layers.highlight) { layers.highlight.remove(); layers.highlight.addTo(map); } return lyr; }
