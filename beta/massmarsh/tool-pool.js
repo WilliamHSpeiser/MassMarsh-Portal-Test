@@ -149,7 +149,10 @@
     MM.imageryCatalog().then(function (cat) {
       if (seq !== SW.seq) return;
       var imgs = (cat.images || []).filter(function (im) { return im.footprint && coversBox(im, b); }).sort(function (p, q) { return catYear(p) - catYear(q); });
-      var old = imgs.filter(function (im) { return catYear(im) >= 1990; })[0]; var nw = imgs.length ? imgs[imgs.length - 1] : null;
+      // left: the earliest colour (RGB) image from 1990 on, so both sides are like for like; black-and-white, CIR (NHAP) and scanned
+      // (AutoGeoreferencer) sets are skipped unless nothing else covers the pool
+      function isRgb(im) { return !/_BW\b/i.test(im.key || '') && !/^(AutoGeoreferencer|NHAP)$/.test(im.source || ''); }
+      var since90 = imgs.filter(function (im) { return catYear(im) >= 1990; }); var old = since90.filter(isRgb)[0] || since90[0]; var nw = imgs.length ? imgs[imgs.length - 1] : null;
       if (!old || !nw || old.key === nw.key) { note.textContent = 'Not enough imagery covers this pool (need an image from 1990 on and a newer one).'; return; }
       var side = 18, size = 300; var W = size, H = Math.max(120, Math.round(size * hM / wM)); if (H > 400) { H = 400; W = Math.round(400 * wM / hM); }
       return Promise.all([fetchWindow(old, b, W, H), fetchWindow(nw, b, W, H)]).then(function (cvs) {
