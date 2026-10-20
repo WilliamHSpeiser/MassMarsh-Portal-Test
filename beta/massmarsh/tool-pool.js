@@ -88,6 +88,7 @@
     P.panel = MM.seriesPanel(holder, { pointColor: '#9c27b0', seriesLabel: 'Pool mean', clickWord: 'a pool',
       titleFn: function (k) { var sat = satLabel() + (P.season.key === 'summer' ? ', summer' : ''), v = valueLabel(P.last && P.last.pts); return k === 'main' ? 'Pool Mean ' + v + ' Time Series (' + sat + ')' : k === 'bp' ? v + ' with Custom Breakpoints (' + satLabel() + ', ' + P.season.chartWord + ')' : v + ' with Change Point (' + satLabel() + ', ' + P.season.chartWord + ')'; },
       captionFn: function () { return scenesCaption(); } });
+    ui.swipe = add(el('div')); ui.swipe.style.margin = '10px 0';         // oldest vs newest imagery swipe of the selected pool (under the change point section)
     ui.legend = add(el('div')); ui.legend.style.margin = '10px 0';
     thin('light');
     add(button('← Change Satellite/Index', function () { S.step = 3; showSettings('mono'); }));
@@ -108,7 +109,57 @@
       if (s2() && !P.raw && pts.referenced === false && pts.length) { var rw = el('div', 'pv-note', 'No marsh reference is available for this pool (series filled from the pixel cube); raw MNDWI is plotted.'); rw.style.color = '#e65100'; info.push(rw); }
       if (!pts.length) { P.panel.showError(info, 'No ' + P.season.scenesWord + ' over this selection.'); return; }
       P.panel.setSeries(pts, info, P.scenes ? P.scenes[P.season.key] : null);
+      if (ui.swipe) poolSwipe(ui.swipe, f);
     }).catch(function (e) { if (req !== P.reqId) return; P.loading = false; P.panel.showError([], 'Error loading time series: ' + e.message); });
+  }
+
+  // ---------- oldest (1990 on) vs newest imagery swipe of a pool: its bounding box padded by 15 m, tiles read from the PMTiles archives ----------
+  var SW = { anim: null, seq: 0 };
+  var SRC_LABEL = { MassGIS: 'MassGIS', NHAP: 'NHAP', CapeCod: 'Cape Cod', AutoGeoreferencer: 'Georeferenced aerial', NAIP: 'NAIP' };
+  function catYear(im) { var t = String(im.year), m = t.match(/(\d{4})/); return m ? +m[1] + (/\ds\b/.test(t) ? 5 : 0) : 9999; }
+  function lon2x(lon, z) { return (lon + 180) / 360 * 256 * Math.pow(2, z); }
+  function lat2y(lat, z) { var s = Math.sin(lat * Math.PI / 180); return (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * 256 * Math.pow(2, z); }
+  function coversBox(im, b) { var fb = MM.featureBbox({ geometry: im.footprint }); if (!MM.bboxIntersects(fb, b)) return false; var rings = MM.ringsOf(im.footprint); return [[b[0], b[1]], [b[2], b[1]], [b[2], b[3]], [b[0], b[3]], [(b[0] + b[2]) / 2, (b[1] + b[3]) / 2]].every(function (c) { return MM.pointInPolys(c[0], c[1], rings); }); }
+  function fetchWindow(im, b, W, H) {                         // canvas of the box [W x H px] from the archive's tiles at its maximum zoom
+    var z = Math.min(im.maxzoom || 18, 18); var x0 = lon2x(b[0], z), x1 = lon2x(b[2], z), y0 = lat2y(b[3], z), y1 = lat2y(b[1], z);
+    var cv = document.createElement('canvas'); cv.width = W; cv.height = H; var ctx = cv.getContext('2d'); var sx = W / (x1 - x0), sy = H / (y1 - y0);
+    var p = new pmtiles.PMTiles(MM.serverUrl('imagery/' + im.file)); var jobs = [];
+    for (var tx = Math.floor(x0 / 256); tx <= Math.floor((x1 - 1) / 256); tx++) for (var ty = Math.floor(y0 / 256); ty <= Math.floor((y1 - 1) / 256); ty++) {
+      (function (tx, ty) { jobs.push(p.getZxy(z, tx, ty).then(function (t) { if (!t || !t.data) return; return createImageBitmap(new Blob([t.data])).then(function (bm) { ctx.drawImage(bm, (tx * 256 - x0) * sx, (ty * 256 - y0) * sy, 256 * sx, 256 * sy); }); }).catch(function () {})); })(tx, ty);
+    }
+    return Promise.all(jobs).then(function () { return cv; });
+  }
+  function poolSwipe(container, f) {
+    container.innerHTML = ''; if (SW.anim) { cancelAnimationFrame(SW.anim); SW.anim = null; } var seq = ++SW.seq;
+    if (typeof pmtiles === 'undefined') return;
+    var fb = MM.featureBbox(f); var u0 = MM.toUtm(fb[0], fb[1]), u1 = MM.toUtm(fb[2], fb[3]); var pad = 15;
+    var c0 = MM.fromUtm(u0[0] - pad, u0[1] - pad), c1 = MM.fromUtm(u1[0] + pad, u1[1] + pad); var b = [c0[0], c0[1], c1[0], c1[1]];
+    var wM = (u1[0] - u0[0]) + 2 * pad, hM = (u1[1] - u0[1]) + 2 * pad;
+    container.appendChild(el('div', 'pv-h', 'Imagery comparison (oldest since 1990 vs newest):')); var note = el('div', 'pv-grey', 'Loading imagery...'); container.appendChild(note);
+    MM.imageryCatalog().then(function (cat) {
+      if (seq !== SW.seq) return;
+      var imgs = (cat.images || []).filter(function (im) { return im.footprint && coversBox(im, b); }).sort(function (p, q) { return catYear(p) - catYear(q); });
+      var old = imgs.filter(function (im) { return catYear(im) >= 1990; })[0]; var nw = imgs.length ? imgs[imgs.length - 1] : null;
+      if (!old || !nw || old.key === nw.key) { note.textContent = 'Not enough imagery covers this pool (need an image from 1990 on and a newer one).'; return; }
+      var side = 18, size = 300; var W = size, H = Math.max(120, Math.round(size * hM / wM)); if (H > 400) { H = 400; W = Math.round(400 * wM / hM); }
+      return Promise.all([fetchWindow(old, b, W, H), fetchWindow(nw, b, W, H)]).then(function (cvs) {
+        if (seq !== SW.seq) return; note.remove();
+        var out = el('canvas'); out.width = W + 2 * side; out.height = H; out.style.cssText = 'max-width:100%;display:block;border:1px solid #999;background:#fff'; container.appendChild(out);
+        var cap = el('div', 'pv-note', 'Pool ' + f.properties.st + '-' + f.properties.pid + ': box ' + Math.round(wM) + ' x ' + Math.round(hM) + ' m (pool bounds + 15 m). Left: ' + old.year + ' ' + (SRC_LABEL[old.source] || old.source) + '; right: ' + nw.year + ' ' + (SRC_LABEL[nw.source] || nw.source) + '. The divider sweeps automatically.'); container.appendChild(cap);
+        var ctx = out.getContext('2d'); var t0 = performance.now();
+        function label(text, x, align) { ctx.save(); ctx.translate(x, H / 2); ctx.rotate(-Math.PI / 2); ctx.fillStyle = '#222'; ctx.font = 'bold 11px Roboto, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(text, 0, 0); ctx.restore(); }
+        function frame(now) {
+          if (seq !== SW.seq || !out.isConnected) { SW.anim = null; return; }
+          var ph = ((now - t0) / 4000) % 2; var frac = ph < 1 ? ph : 2 - ph; var x = Math.round(frac * W);
+          ctx.clearRect(0, 0, out.width, H); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, out.width, H);
+          ctx.drawImage(cvs[0], 0, 0, x, H, side, 0, x, H); ctx.drawImage(cvs[1], x, 0, W - x, H, side + x, 0, W - x, H);
+          ctx.fillStyle = '#ffeb3b'; ctx.fillRect(side + x - 1, 0, 2, H);
+          label(old.year + ' \u2013 ' + (SRC_LABEL[old.source] || old.source), side / 2, 'left'); label(nw.year + ' \u2013 ' + (SRC_LABEL[nw.source] || nw.source), side + W + side / 2, 'right');
+          SW.anim = requestAnimationFrame(frame);
+        }
+        SW.anim = requestAnimationFrame(frame);
+      });
+    }).catch(function (e) { if (seq === SW.seq) note.textContent = 'Imagery not available: ' + e.message; });
   }
 
   // ---------- Multi ----------

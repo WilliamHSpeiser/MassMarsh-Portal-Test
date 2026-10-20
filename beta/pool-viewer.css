@@ -100,3 +100,9 @@ html, body { height: 100%; margin: 0; }
 .pv-dialog-input { width: 100%; padding: 8px 10px; margin: 12px 0 6px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; }
 .pv-dialog-btn { background: #881c1c; color: #fff; border: none; padding: 8px 22px; border-radius: 6px; font-size: 14px; cursor: pointer; }
 .pv-dialog-btn:disabled { opacity: 0.7; cursor: default; }
+.pv-search { position: relative; }
+.pv-search-input { width: 240px; height: 32px; padding: 0 10px; border: 1px solid #bbb; border-radius: 4px; background: rgba(255,255,255,0.92); font: 13px Roboto, sans-serif; box-shadow: 0 1px 4px rgba(0,0,0,0.3); }
+.pv-search-dd { position: absolute; left: 0; top: 34px; width: 320px; max-width: 70vw; background: #fff; border: 1px solid #bbb; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.25); z-index: 1100; max-height: 50vh; overflow: auto; }
+.pv-search-item { padding: 6px 10px; font: 12px Roboto, sans-serif; color: #333; cursor: pointer; border-bottom: 1px solid #eee; }
+.pv-search-item:hover { background: #e0f7fa; }
+.pv-search-note { padding: 6px 10px; font: italic 11px Roboto, sans-serif; color: #777; }

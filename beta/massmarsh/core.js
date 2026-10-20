@@ -278,6 +278,7 @@ window.MM = (function () {
   function exitTool() {                                        // createBackButton: clear all layers, the tool's state and the selection
     if (S.activeTool && tools[S.activeTool] && tools[S.activeTool].clear) tools[S.activeTool].clear();
     clearAllLayers(); removeSwitcher(); S.selection = null; S.activeTool = null; map.off('click', toolClick); toolClickHandler = null;
+    map.dragging.enable(); map.doubleClickZoom.enable(); map.getContainer().style.cursor = '';
     compareOff();
   }
 
@@ -294,7 +295,7 @@ window.MM = (function () {
   // shape: 'rectangle' | 'polygon' | 'line'; onDone(result) with result = L.LatLngBounds (rectangle) or [[lon,lat],...] (polygon/line)
   function armDraw(shape, btn, onDone, opts) {
     opts = opts || {}; stopDraw();
-    draw = { shape: shape, btn: btn, label: btn ? btn.textContent : '', verts: [], pts: [] };
+    draw = { shape: shape, btn: btn, label: btn ? btn.textContent : '', verts: [], pts: [], since: Date.now() };
     if (btn) { btn.classList.add('armed'); if (opts.armedLabel) btn.textContent = opts.armedLabel; else if (opts.cancelSuffix !== false) btn.textContent = draw.label + ' (click to cancel)'; }
     map.getContainer().style.cursor = 'crosshair';
     if (shape === 'rectangle') {
@@ -316,11 +317,13 @@ window.MM = (function () {
       map.on('click', draw.click); map.on('dblclick', draw.dbl);
     }
   }
-  function isDrawing() { return !!draw; }
+  function isDrawing() { if (staleDraw()) stopDraw(); return !!draw; }
 
   // ---------- map click routing ----------
   var toolClickHandler = null;
-  function toolClick(e) { if (draw) return; if (toolClickHandler) toolClickHandler(e); }
+  function staleDraw() { return draw && !draw.verts.length && !draw.start && Date.now() - (draw.since || 0) > 90000; }   // armed > 90 s ago, nothing drawn: treat as abandoned
+  function toolClick(e) { if (staleDraw()) stopDraw(); if (draw) return; if (toolClickHandler) toolClickHandler(e); }
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { stopDraw(); closeMapTools(); } });
   function setClickHandler(fn) { toolClickHandler = fn; map.off('click', toolClick); if (fn) map.on('click', toolClick); }
 
   // ---------- tool switcher (top-right, as in the GEE app) ----------
@@ -469,7 +472,7 @@ window.MM = (function () {
         removeLayer('base'); updateStatus();
         var fill = kind === 'bboxes' ? 0.06 : 0.125;
         layers.base = L.geoJSON(d, { renderer: canvas, style: { color: 'cyan', weight: 1, fillColor: '#00FFFF', fillOpacity: fill }, interactive: kind !== 'bboxes',
-          onEachFeature: function (f, lyr) { if (kind !== 'bboxes') lyr.on('click', function (e) { L.DomEvent.stop(e); if (draw) return; if (kind === 'units') toggleUnit(f); else selectComplex(f, e.latlng); }); } }).addTo(map);
+          onEachFeature: function (f, lyr) { if (kind !== 'bboxes') lyr.on('click', function (e) { L.DomEvent.stop(e); if (staleDraw()) stopDraw(); if (draw) return; if (kind === 'units') toggleUnit(f); else selectComplex(f, e.latlng); }); } }).addTo(map);
         if (kind === 'bboxes') setClickHandler(function (e) { bboxClick(e, d); });
       }).catch(function (e) { setStatus(status, 'Error loading selection layer: ' + e.message, '#c00'); });
     }
@@ -684,7 +687,7 @@ window.MM = (function () {
   // measured shape with its value on the map until 'Clear measurements'. While measuring, feature clicks are suppressed (draw is set).
   function startMeasure(kind) {
     stopDraw(); var color = '#ff3d00';
-    draw = { shape: 'measure', verts: [], pts: [], label: '', btn: null, tip: L.tooltip({ permanent: true, direction: 'right', offset: [14, 0], className: 'pv-measure-tip' }) };
+    draw = { shape: 'measure', verts: [], pts: [], label: '', btn: null, since: Date.now(), tip: L.tooltip({ permanent: true, direction: 'right', offset: [14, 0], className: 'pv-measure-tip' }) };
     map.getContainer().style.cursor = 'crosshair';
     function lls(extra) { var p = draw.verts.map(function (v) { return L.latLng(v[1], v[0]); }); return extra ? p.concat([extra]) : p; }
     function readout(extra) { var p = lls(extra); if (kind === 'line') return 'Length: ' + fmtLen(pathLengthM(p)); if (p.length < 3) return 'Area: 0 m\u00b2'; return 'Area: ' + fmtAreaM2(ringAreaM2(p)) + (kind === 'rectangle' ? '' : '\nPerimeter: ' + fmtLen(pathLengthM(p.concat([p[0]])))); }
@@ -754,6 +757,28 @@ window.MM = (function () {
       if (!list.length) dd.appendChild(el('div', 'pv-maptool-note', 'No historical imagery covers this area.'));
       list.forEach(function (im) { ddItem(dd, null, im.year + ' - ' + (IMG_SOURCE[im.source] || im.source) + ' (' + im.type + ')', function () { close(); setBasemap(im); }, !!(basemap && basemap.key === im.key)); });
     }).catch(function () { note.textContent = 'The imagery catalog is not reachable.'; });
+  }
+  // ---------- place search (top left): OpenStreetMap Nominatim, no key needed; results biased to Massachusetts; 'lat, lon' goes straight there ----------
+  var searchCtl = null;
+  function placeSearch() {
+    var Ctl = L.Control.extend({ onAdd: function () {
+      var c = L.DomUtil.create('div', 'pv-search'); var inp = L.DomUtil.create('input', 'pv-search-input', c); inp.type = 'search'; inp.placeholder = 'Search places or lat, lon'; inp.setAttribute('aria-label', 'Search places');
+      var dd = L.DomUtil.create('div', 'pv-search-dd', c); dd.style.display = 'none'; var timer = null, last = '';
+      function show(items) { dd.innerHTML = ''; if (!items.length) { dd.style.display = 'none'; return; } items.forEach(function (it) { var d = el('div', 'pv-search-item', it.label); d.addEventListener('click', function () { dd.style.display = 'none'; inp.value = it.label; if (it.bounds) map.fitBounds(it.bounds, { maxZoom: 16 }); else map.setView(it.center, 15); }); dd.appendChild(d); }); dd.style.display = ''; }
+      function run() {
+        var q = inp.value.trim(); if (!q || q === last) return; last = q;
+        var m = q.match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/); if (m) { show([{ label: 'Go to ' + m[1] + ', ' + m[2], center: L.latLng(+m[1], +m[2]) }]); return; }
+        dd.innerHTML = ''; dd.appendChild(el('div', 'pv-search-note', 'Searching...')); dd.style.display = '';
+        fetch('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&countrycodes=us&viewbox=-73.6,42.95,-69.8,41.0&q=' + encodeURIComponent(q), { headers: { 'Accept': 'application/json' } })
+          .then(function (r) { return r.json(); }).then(function (res) { if (inp.value.trim() !== q) return; show(res.map(function (x) { var bb = x.boundingbox; return { label: x.display_name, center: L.latLng(+x.lat, +x.lon), bounds: bb ? L.latLngBounds([+bb[0], +bb[2]], [+bb[1], +bb[3]]) : null }; })); if (!res.length) { dd.innerHTML = ''; dd.appendChild(el('div', 'pv-search-note', 'No results')); dd.style.display = ''; } })
+          .catch(function () { dd.innerHTML = ''; dd.appendChild(el('div', 'pv-search-note', 'Search is not reachable')); dd.style.display = ''; });
+      }
+      inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); clearTimeout(timer); run(); } if (e.key === 'Escape') dd.style.display = 'none'; });
+      inp.addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(run, 800); if (!inp.value.trim()) { last = ''; dd.style.display = 'none'; } });
+      inp.addEventListener('focus', function () { if (dd.children.length) dd.style.display = ''; });
+      L.DomEvent.disableClickPropagation(c); L.DomEvent.disableScrollPropagation(c); return c; } });
+    searchCtl = new Ctl({ position: 'topleft' }).addTo(map);
+    map.on('click', function () { var d = document.querySelector('.pv-search-dd'); if (d) d.style.display = 'none'; });
   }
   function placeMapTools() {
     if (measureCtl) map.removeControl(measureCtl); if (basemapCtl) map.removeControl(basemapCtl);
@@ -902,7 +927,7 @@ window.MM = (function () {
   function boot(opts) {
     opts = opts || {}; S.only = opts.only || null;
     var want = (location.search.match(/[?&]tool=([a-z_]+)/) || [])[1];
-    showLanding(); placeMapTools();
+    showLanding(); placeMapTools(); placeSearch();
     if (want && tools[want] && !S.only) startTool(want);
   }
   window.addEventListener('error', function (e) { side.appendChild(el('div', 'pv-err', 'Unexpected error: ' + (e.message || e.type) + ' (reload the page if the tool stops responding)')); });
