@@ -283,17 +283,42 @@
     var holder = el('div'); holder.style.cssText = 'position:absolute;left:0;top:0;width:900px;background:#fff;color:#333;z-index:-1;opacity:1';   // on-screen behind the page: off-screen elements render blank in some browsers
     var body = html.replace(/^[\s\S]*?<body[^>]*>/i, '').replace(/<\/body>[\s\S]*$/i, ''); var css = (html.match(/<style>([\s\S]*?)<\/style>/i) || [])[1] || '';
     holder.innerHTML = '<style>' + css.replace(/body\s*\{[^}]*\}/, '') + '</style>' + body; document.body.appendChild(holder);
-    rasterizeSvgs(holder).then(function () { setTimeout(function () {
-      try {
-        var doc = new jspdf.jsPDF({ unit: 'pt', format: 'letter', compress: true });
-        doc.html(holder, { x: 24, y: 24, width: 564, windowWidth: 900, autoPaging: 'text', margin: [24, 24, 24, 24], html2canvas: { scale: 564 / 900, useCORS: true, allowTaint: true, backgroundColor: '#ffffff', logging: false, scrollX: 0, scrollY: 0, windowWidth: 900 },
-          callback: function (pdf) {
-            if (holder.parentNode) holder.parentNode.removeChild(holder);
-            var url = URL.createObjectURL(pdf.output('blob')); st.textContent = 'Click the link below (or right-click and choose "Save Link As").'; st.style.color = '';
-            var a = el('a', 'dl', '\u2b07 Download ' + pdfName); a.href = url; a.download = pdfName; a.style.display = 'block'; links.appendChild(a); htmlLink('HTML version: ' + filename);
-          } });
-      } catch (e) { if (holder.parentNode) holder.parentNode.removeChild(holder); st.textContent = 'PDF conversion failed (' + e.message + '); the HTML report is below.'; st.style.color = '#c00'; htmlLink('\u2b07 Download ' + filename); }
-    }, 50); });
+    rasterizeSvgs(holder).then(function () { return buildPdfPages(holder); }).then(function (doc) {
+      var url = URL.createObjectURL(doc.output('blob')); st.textContent = 'Click the link below (or right-click and choose "Save Link As").'; st.style.color = '';
+      var a = el('a', 'dl', '\u2b07 Download ' + pdfName); a.href = url; a.download = pdfName; a.style.display = 'block'; links.appendChild(a); htmlLink('HTML version: ' + filename);
+    }).catch(function (e) { st.textContent = 'PDF conversion failed (' + e.message + '); the HTML report is below.'; st.style.color = '#c00'; htmlLink('\u2b07 Download ' + filename); })
+      .then(function () { if (holder.parentNode) holder.parentNode.removeChild(holder); });
+  }
+  // Page-aware PDF: the report is rendered block by block (html2canvas at 2x) and the blocks are laid out on letter pages so that no
+  // table, map, chart or pool row is cut by a page break (a block taller than a page is shrunk to fit one page).
+  function buildPdfPages(holder) {
+    var PW = 612, PH = 792, M = 36, W = PW - 2 * M, maxH = PH - 2 * M, GAP = 6, pxW = holder.clientWidth || 900, ptPerPx = W / pxW;
+    var blocks = collectBlocks(holder, maxH / ptPerPx);
+    var doc = new jspdf.jsPDF({ unit: 'pt', format: 'letter', compress: true }); var y = M;
+    function fits(node, yy) { var h = Math.min(maxH, node.getBoundingClientRect().height * ptPerPx); return yy + h <= PH - M; }
+    return blocks.reduce(function (chain, node, i) {
+      return chain.then(function () {
+        return html2canvas(node, { scale: 2, useCORS: true, allowTaint: true, backgroundColor: '#ffffff', logging: false }).then(function (cv) {
+          if (!cv.width || !cv.height) return;
+          var w = Math.min(W, cv.width / 2 * ptPerPx), h = cv.height / cv.width * w;
+          if (h > maxH) { w = w * maxH / h; h = maxH; }
+          var heading = /^H[1-4]$/.test(node.tagName) && blocks[i + 1];
+          if (y > M && (y + h > PH - M || (heading && !fits(blocks[i + 1], y + h + GAP)))) { doc.addPage(); y = M; }   // never strand a heading at a page bottom
+          doc.addImage(cv.toDataURL('image/jpeg', 0.9), 'JPEG', M, y, w, h); y += h + GAP;
+        });
+      });
+    }, Promise.resolve()).then(function () { return doc; });
+  }
+  function collectBlocks(root, maxPx) {                        // top-level report elements; containers taller than a page are split into their children
+    var out = [];
+    function walk(node) {
+      Array.prototype.forEach.call(node.children, function (c) {
+        if (c.tagName === 'STYLE' || c.tagName === 'SCRIPT') return;
+        var h = c.getBoundingClientRect().height; if (!h) return;
+        if (h > maxPx && c.children.length > 1 && !/^(TABLE|IMG|CANVAS|SVG)$/i.test(c.tagName)) walk(c); else out.push(c);
+      });
+    }
+    walk(root); return out;
   }
   // html2canvas leaves inline SVG charts as empty boxes in the PDF: draw each chart to a canvas (2x) and swap in a PNG image first
   function rasterizeSvgs(root) {
