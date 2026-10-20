@@ -183,7 +183,9 @@ window.MM = (function () {
   function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
   function add(n) { side.appendChild(n); return n; }
   function clearSide() { side.innerHTML = ''; mapLegend(null); }
-  function titlePanel(sub) { var t = el('div', 'pv-title'); t.appendChild(el('span', 'brand', 'MassMarsh:')); t.appendChild(el('span', 'sub', sub)); add(t); add(el('div', 'pv-divider')); }
+  function titlePanel(sub) {                                 // "MassMarsh:" links to the portal home: './' resolves to the page's own directory (beta/ now, the site root later)
+    var t = el('div', 'pv-title'); var brand = el('a', 'brand', 'MassMarsh:'); brand.href = './'; brand.title = 'MassMarsh Remote Sensing Portal home'; t.appendChild(brand); t.appendChild(el('span', 'sub', sub)); add(t); add(el('div', 'pv-divider'));
+  }
   function thin(cls) { return add(el('div', 'pv-thin' + (cls ? ' ' + cls : ''))); }
   function button(label, cb, cls) { var b = el('button', cls || ''); if (/^\u2190 /.test(label)) { var ar = el('span', 'pv-arrow', '\u2190'); b.appendChild(ar); b.appendChild(document.createTextNode(label.slice(1))); } else if (/ \u2192$/.test(label)) { b.appendChild(document.createTextNode(label.slice(0, -1))); b.appendChild(el('span', 'pv-arrow pv-arrow-r', '\u2192')); } else b.textContent = label; b.addEventListener('click', cb); return b; }
   function setStatus(e, text, color, italic) { e.textContent = text; e.style.color = color || '#666'; e.style.fontStyle = italic ? 'italic' : 'normal'; e.style.fontWeight = color === 'green' ? 'bold' : 'normal'; e.style.fontSize = '11px'; }

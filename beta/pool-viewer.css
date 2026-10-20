@@ -15,7 +15,8 @@ html, body { height: 100%; margin: 0; }
 
 /* title row and dividers, as in createTitlePanel / createDivider */
 .pv-title { display: flex; align-items: baseline; margin: 6px 0 4px 0; }
-.pv-title .brand { font-size: 20px; font-weight: bold; color: #881c1c; }
+.pv-title .brand { font-size: 20px; font-weight: bold; color: #881c1c; text-decoration: none; }
+.pv-title a.brand:hover { text-decoration: underline; }
 .pv-title .sub { font-size: 20px; font-style: italic; color: #000; margin-left: 2px; }
 .pv-divider { height: 2px; background: #881c1c; margin: 5px 0 15px 0; }
 .pv-thin { height: 1px; background: #999; margin: 5px 0 10px 0; }
