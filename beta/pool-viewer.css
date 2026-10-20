@@ -111,3 +111,18 @@ html, body { height: 100%; margin: 0; }
 .pv-measure-result .pv-measure-x { display: none; position: absolute; right: 2px; top: -1px; font: bold 15px Roboto, sans-serif; color: #b71c1c; cursor: pointer; line-height: 1; padding: 0 3px; }
 .pv-measure-result.sel .pv-measure-x { display: block; }
 .pv-measure-result.sel { border-width: 2px; }
+
+/* expandable charts (icon top-right of every chart; near full-window modal with a Download button) */
+.pv-chart-wrap { position: relative; }
+.pv-chart-expand { position: absolute; top: 2px; right: 2px; width: 22px; height: 22px; border: 0; background: rgba(255,255,255,0.85); color: #666; border-radius: 3px; padding: 3px; cursor: pointer; opacity: 0.75; z-index: 2; line-height: 0; }
+.pv-chart-expand:hover { opacity: 1; color: #1a73e8; }
+.pv-chart-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.65); z-index: 7000; display: flex; align-items: center; justify-content: center; }
+.pv-chart-modal-box { position: relative; background: #fff; border-radius: 6px; width: 92vw; height: 90vh; max-width: 1700px; display: flex; flex-direction: column; padding: 36px 24px 14px; box-sizing: border-box; box-shadow: 0 8px 30px rgba(0,0,0,0.5); }
+.pv-chart-modal-x { position: absolute; top: 6px; right: 6px; width: 30px; height: 30px; border: 0; background: transparent; color: #444; cursor: pointer; border-radius: 15px; padding: 4px; line-height: 0; }
+.pv-chart-modal-x:hover { background: #eee; color: #000; }
+.pv-chart-modal-chart { flex: 1 1 auto; min-height: 0; }
+.pv-chart-modal-chart .pv-caption { font-size: 13px; }
+.pv-chart-modal-foot { text-align: center; padding-top: 10px; }
+.pv-chart-modal-foot button { font-size: 14px; padding: 6px 22px; }
+/* header search box (beta page header) */
+.mm-search .pv-search-dd { top: 38px; left: 0; width: 100%; min-width: 300px; }

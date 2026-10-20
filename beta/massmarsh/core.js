@@ -587,16 +587,45 @@ window.MM = (function () {
   function drawChart(container, title, datasets, height, legendPos, opt) {
     opt = opt || {}; container.innerHTML = ''; var wrap = el('div', 'pv-chart-wrap'); wrap.style.height = height + 'px'; var cv = el('canvas'); wrap.appendChild(cv); container.appendChild(wrap);
     var prev = container._chart; if (prev) { prev.destroy(); }
+    container._chartArgs = { title: title, datasets: datasets, legendPos: legendPos, opt: opt };   // re-drawn larger by expandChart (same data, trends, change point)
+    if (!opt.noExpand) { var ex = el('button', 'pv-chart-expand'); ex.type = 'button'; ex.title = 'Expand chart'; ex.innerHTML = ICONS.expand; ex.addEventListener('click', function () { expandChart(container); }); wrap.appendChild(ex); }
+    var fs = opt.fontScale || 1;
     var idx = opt.index || S.opts.index; var lab = LABELS[idx] || ['', '']; var yr = opt.yRange || (idx === 'VV' || idx === 'VH' ? [-30, 0] : [-1, 1]);
     var yTitle = opt.yTitle || ('← ' + lab[0] + '  |  ' + idx + '  |  ' + lab[1] + ' →');
     var c = new Chart(cv, { data: { datasets: datasets }, options: { responsive: true, maintainAspectRatio: false, animation: false,
-      plugins: { title: { display: true, text: title, font: { size: 12 } }, legend: { display: legendPos !== 'none', position: legendPos || 'bottom', labels: { boxWidth: 10, font: { size: 10 }, filter: function (it) { return !/^_/.test(it.text); } } },
+      plugins: { title: { display: true, text: title, font: { size: 12 * fs } }, legend: { display: legendPos !== 'none', position: legendPos || 'bottom', labels: { boxWidth: 10 * fs, font: { size: 10 * fs }, filter: function (it) { return !/^_/.test(it.text); } } },
         tooltip: { callbacks: { label: function (c) { var d = c.raw; return (d.plat !== undefined && d.plat !== null ? platName(d.plat) + ', ' : '') + (opt.xIsYear ? c.parsed.x : fmtDate(c.parsed.x)) + ': ' + c.parsed.y.toFixed(opt.decimals === undefined ? 4 : opt.decimals); } } } },
-      scales: { x: opt.xIsYear ? { type: 'linear', title: { display: true, text: opt.xTitle || 'Year' }, grid: { color: '#eee' }, ticks: { callback: function (v) { return String(v); } } } : { type: 'time', title: { display: true, text: 'Date' }, grid: { color: '#eee' }, time: { unit: 'year' } },
-        y: { min: yr ? yr[0] : undefined, max: yr ? yr[1] : undefined, title: { display: true, text: yTitle }, grid: { color: '#eee' } } } } });
+      scales: { x: opt.xIsYear ? { type: 'linear', title: { display: true, text: opt.xTitle || 'Year', font: { size: 12 * fs } }, grid: { color: '#eee' }, ticks: { font: { size: 11 * fs }, callback: function (v) { return String(v); } } } : { type: 'time', title: { display: true, text: 'Date', font: { size: 12 * fs } }, grid: { color: '#eee' }, time: { unit: 'year' }, ticks: { font: { size: 11 * fs } } },
+        y: { min: yr ? yr[0] : undefined, max: yr ? yr[1] : undefined, title: { display: true, text: yTitle, font: { size: 12 * fs } }, grid: { color: '#eee' }, ticks: { font: { size: 11 * fs } } } } } });
     container._chart = c; return c;
   }
   function caption(container, text, red) { container.appendChild(el('div', 'pv-caption' + (red ? ' red' : ''), text)); }
+  // expanded chart: the current chart (with any date-range trends / change point already applied) re-drawn near full-window size
+  var chartModal = null;
+  function expandChart(container) {
+    var a = container._chartArgs; if (!a) return; if (chartModal) chartModal.close();
+    var ov = el('div', 'pv-chart-modal'); var box = el('div', 'pv-chart-modal-box'); ov.appendChild(box);
+    var x = el('button', 'pv-chart-modal-x'); x.type = 'button'; x.title = 'Close'; x.innerHTML = ICONS.x; box.appendChild(x);
+    var holder = el('div', 'pv-chart-modal-chart'); box.appendChild(holder);
+    var cap = container.querySelector('.pv-caption'); var capNode = cap ? el('div', cap.className, cap.textContent) : null;
+    var foot = el('div', 'pv-chart-modal-foot'); foot.appendChild(button('Download', function () { downloadChart(holder, capNode, a.title); })); box.appendChild(foot);
+    document.body.appendChild(ov);
+    var h = Math.max(160, box.clientHeight - foot.offsetHeight - (capNode ? 26 : 0) - 56);   // chart fills the box above the Download row
+    var ds = a.datasets.map(function (d) { var c = Object.assign({}, d, { data: d.data.slice() }); if (c.pointRadius) c.pointRadius = c.pointRadius * 1.5; if (c.borderWidth) c.borderWidth = c.borderWidth * 1.5; return c; });
+    drawChart(holder, a.title, ds, h, a.legendPos, Object.assign({}, a.opt, { noExpand: true, fontScale: 1.5 }));
+    if (capNode) holder.appendChild(capNode);
+    function onKey(e) { if (e.key === 'Escape') close(); }
+    function close() { if (holder._chart) holder._chart.destroy(); if (ov.parentNode) ov.parentNode.removeChild(ov); document.removeEventListener('keydown', onKey); if (chartModal === modal) chartModal = null; }
+    var modal = { close: close }; chartModal = modal;
+    x.addEventListener('click', close); ov.addEventListener('click', function (e) { if (e.target === ov) close(); }); document.addEventListener('keydown', onKey);
+  }
+  function downloadChart(holder, capNode, title) {                // PNG of the expanded chart on white, caption underneath
+    var cv = holder.querySelector('canvas'); if (!cv) return; var k = cv.width / (cv.clientWidth || cv.width); var pad = Math.round(16 * k), capH = capNode ? Math.round(26 * k) : 0;
+    var out = document.createElement('canvas'); out.width = cv.width + 2 * pad; out.height = cv.height + 2 * pad + capH; var c = out.getContext('2d');
+    c.fillStyle = '#fff'; c.fillRect(0, 0, out.width, out.height); c.drawImage(cv, pad, pad);
+    if (capNode) { c.fillStyle = /red/.test(capNode.className) ? '#c00' : '#555'; c.font = Math.round(12 * k) + 'px Roboto, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'bottom'; c.fillText(capNode.textContent, out.width / 2, out.height - pad / 2); }
+    var a = document.createElement('a'); a.href = out.toDataURL('image/png'); a.download = String(title || 'chart').replace(/[^\w\-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 80) + '.png'; a.click();
+  }
 
   // ---------- series panel: info + chart + breakpoints + change point (shared by the mono analyses) ----------
   // opts: { titleFn(kind) -> chart title for 'main' | 'bp' | 'cp', captionFn() -> footer text, pointColor, seriesLabel, clickWord }
@@ -689,6 +718,7 @@ window.MM = (function () {
     poly: '<svg viewBox="0 0 24 24"><path d="M12 3l9 7-3 10H6L3 10z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="3" r="2" fill="currentColor"/><circle cx="21" cy="10" r="2" fill="currentColor"/><circle cx="18" cy="20" r="2" fill="currentColor"/><circle cx="6" cy="20" r="2" fill="currentColor"/><circle cx="3" cy="10" r="2" fill="currentColor"/></svg>',
     pen: '<svg viewBox="0 0 24 24"><path d="M3 21l3.5-1L18 8.5 15.5 6 4 17.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M14 7.5l2.5 2.5" stroke="currentColor" stroke-width="2"/></svg>',
     x: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.5"/></svg>',
+    expand: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M19 19H5V5h7V3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z" fill="currentColor"/></svg>',
     layers: '<svg viewBox="0 0 24 24" width="20" height="20"><path d="M12 3l9 5-9 5-9-5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M3 13l9 5 9-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M3 17l9 5 9-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>'
   };
   var measureLayer = L.layerGroup().addTo(map);
@@ -777,10 +807,8 @@ window.MM = (function () {
   }
   // ---------- place search (top left): OpenStreetMap Nominatim, no key needed; results biased to Massachusetts; 'lat, lon' goes straight there ----------
   var searchCtl = null;
-  function placeSearch() {
-    var Ctl = L.Control.extend({ onAdd: function () {
-      var c = L.DomUtil.create('div', 'pv-search'); var inp = L.DomUtil.create('input', 'pv-search-input', c); inp.type = 'search'; inp.placeholder = 'Search places or lat, lon'; inp.setAttribute('aria-label', 'Search places');
-      var dd = L.DomUtil.create('div', 'pv-search-dd', c); dd.style.display = 'none'; var timer = null, last = '';
+  function bindSearch(inp, dd) {                              // place search behaviour on an input + dropdown (page header box or map control)
+      var timer = null, last = '';
       function show(items) { dd.innerHTML = ''; if (!items.length) { dd.style.display = 'none'; return; } items.forEach(function (it) { var d = el('div', 'pv-search-item', it.label); d.addEventListener('click', function () { dd.style.display = 'none'; inp.value = it.label; if (it.bounds) map.fitBounds(it.bounds, { maxZoom: 16 }); else map.setView(it.center, 15); }); dd.appendChild(d); }); dd.style.display = ''; }
       function run() {
         var q = inp.value.trim(); if (!q || q === last) return; last = q;
@@ -793,6 +821,16 @@ window.MM = (function () {
       inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); clearTimeout(timer); run(); } if (e.key === 'Escape') dd.style.display = 'none'; });
       inp.addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(run, 800); if (!inp.value.trim()) { last = ''; dd.style.display = 'none'; } });
       inp.addEventListener('focus', function () { if (dd.children.length) dd.style.display = ''; });
+  }
+  function placeSearch() {
+    var hdr = document.getElementById('mm-search-input');
+    if (hdr) {                                                 // the page header (massmarshviewer.com style) hosts the search box
+      var hd = el('div', 'pv-search-dd'); hd.style.display = 'none'; hdr.parentNode.appendChild(hd); bindSearch(hdr, hd);
+      map.on('click', function () { hd.style.display = 'none'; }); return;
+    }
+    var Ctl = L.Control.extend({ onAdd: function () {
+      var c = L.DomUtil.create('div', 'pv-search'); var inp = L.DomUtil.create('input', 'pv-search-input', c); inp.type = 'search'; inp.placeholder = 'Search places or lat, lon'; inp.setAttribute('aria-label', 'Search places');
+      var dd = L.DomUtil.create('div', 'pv-search-dd', c); dd.style.display = 'none'; bindSearch(inp, dd);
       L.DomEvent.disableClickPropagation(c); L.DomEvent.disableScrollPropagation(c); return c; } });
     searchCtl = new Ctl({ position: 'topleft' }).addTo(map);
     map.on('click', function () { var d = document.querySelector('.pv-search-dd'); if (d) d.style.display = 'none'; });

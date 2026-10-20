@@ -129,13 +129,23 @@
     }
     return Promise.all(jobs).then(function () { return cv; });
   }
+  function stretchContrast(cv) {                               // 2-98 % percentile stretch per channel: slightly more contrast so pools stand out
+    var ctx = cv.getContext('2d'), img = ctx.getImageData(0, 0, cv.width, cv.height), d = img.data, n = d.length / 4;
+    for (var ch = 0; ch < 3; ch++) {
+      var hist = new Uint32Array(256), cnt = 0; for (var i = 0; i < n; i++) { if (d[i * 4 + 3] === 0) continue; hist[d[i * 4 + ch]]++; cnt++; }
+      if (!cnt) continue; var lo = 0, hi = 255, acc = 0, v; for (v = 0; v < 256; v++) { acc += hist[v]; if (acc >= cnt * 0.02) { lo = v; break; } } acc = 0; for (v = 255; v >= 0; v--) { acc += hist[v]; if (acc >= cnt * 0.02) { hi = v; break; } }
+      if (hi - lo < 20) continue; var k = 255 / (hi - lo), lut = new Uint8ClampedArray(256); for (v = 0; v < 256; v++) lut[v] = (v - lo) * k;
+      for (i = 0; i < n; i++) d[i * 4 + ch] = lut[d[i * 4 + ch]];
+    }
+    ctx.putImageData(img, 0, 0);
+  }
   function poolSwipe(container, f) {
     container.innerHTML = ''; if (SW.anim) { cancelAnimationFrame(SW.anim); SW.anim = null; } var seq = ++SW.seq;
     if (typeof pmtiles === 'undefined') return;
     var fb = MM.featureBbox(f); var u0 = MM.toUtm(fb[0], fb[1]), u1 = MM.toUtm(fb[2], fb[3]); var pad = 15;
     var c0 = MM.fromUtm(u0[0] - pad, u0[1] - pad), c1 = MM.fromUtm(u1[0] + pad, u1[1] + pad); var b = [c0[0], c0[1], c1[0], c1[1]];
     var wM = (u1[0] - u0[0]) + 2 * pad, hM = (u1[1] - u0[1]) + 2 * pad;
-    container.appendChild(el('div', 'pv-h', 'Imagery comparison (oldest since 1990 vs newest):')); var note = el('div', 'pv-grey', 'Loading imagery...'); container.appendChild(note);
+    container.appendChild(el('div', 'pv-thin')); var note = el('div', 'pv-grey', 'Loading imagery...'); container.appendChild(note);   // own mini section under the chart notes
     MM.imageryCatalog().then(function (cat) {
       if (seq !== SW.seq) return;
       var imgs = (cat.images || []).filter(function (im) { return im.footprint && coversBox(im, b); }).sort(function (p, q) { return catYear(p) - catYear(q); });
@@ -143,16 +153,25 @@
       if (!old || !nw || old.key === nw.key) { note.textContent = 'Not enough imagery covers this pool (need an image from 1990 on and a newer one).'; return; }
       var side = 18, size = 300; var W = size, H = Math.max(120, Math.round(size * hM / wM)); if (H > 400) { H = 400; W = Math.round(400 * wM / hM); }
       return Promise.all([fetchWindow(old, b, W, H), fetchWindow(nw, b, W, H)]).then(function (cvs) {
-        if (seq !== SW.seq) return; note.remove();
+        if (seq !== SW.seq) return; note.remove(); cvs.forEach(stretchContrast);
+        var Z = 18, X0 = lon2x(b[0], Z), X1 = lon2x(b[2], Z), Y0 = lat2y(b[3], Z), Y1 = lat2y(b[1], Z);   // pool outline in canvas pixels (Mercator, linear in the box)
+        var rings = MM.ringsOf(f.geometry).reduce(function (a, poly) { return a.concat(poly); }, []).map(function (ring) { return ring.map(function (c) { return [(lon2x(c[0], Z) - X0) * W / (X1 - X0), (lat2y(c[1], Z) - Y0) * H / (Y1 - Y0)]; }); });
         var out = el('canvas'); out.width = W + 2 * side; out.height = H; out.style.cssText = 'max-width:100%;display:block;border:1px solid #999;background:#fff'; container.appendChild(out);
-        var cap = el('div', 'pv-note', 'Pool ' + f.properties.st + '-' + f.properties.pid + ': box ' + Math.round(wM) + ' x ' + Math.round(hM) + ' m (pool bounds + 15 m). Left: ' + old.year + ' ' + (SRC_LABEL[old.source] || old.source) + '; right: ' + nw.year + ' ' + (SRC_LABEL[nw.source] || nw.source) + '. The divider sweeps automatically.'); container.appendChild(cap);
+        var cap = el('div', 'pv-note', 'Pool ' + f.properties.st + '-' + f.properties.pid + ': box ' + Math.round(wM) + ' x ' + Math.round(hM) + ' m (pool bounds + 15 m). Left: ' + old.year + ' ' + (SRC_LABEL[old.source] || old.source) + '; right: ' + nw.year + ' ' + (SRC_LABEL[nw.source] || nw.source) + '.'); container.appendChild(cap);
         var ctx = out.getContext('2d'); var t0 = performance.now();
         function label(text, x) { ctx.save(); ctx.translate(x, H / 2); ctx.rotate(-Math.PI / 2); ctx.fillStyle = '#222'; ctx.font = 'bold 11px Roboto, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(text, 0, 0); ctx.restore(); }
-        function paint(frac) {                                // one swipe position, frac 0..1 of the width
+        function outline() {                                  // the selected pool, outline only (yellow with a dark halo)
+          ctx.save(); ctx.translate(side, 0); ctx.lineJoin = 'round';
+          rings.forEach(function (r) { ctx.beginPath(); r.forEach(function (p, i) { if (i) ctx.lineTo(p[0], p[1]); else ctx.moveTo(p[0], p[1]); }); ctx.closePath(); ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.stroke(); ctx.lineWidth = 1.5; ctx.strokeStyle = '#FFFF00'; ctx.stroke(); });
+          ctx.restore();
+        }
+        function paint(frac, watermark) {                     // one swipe position, frac 0..1 of the width; watermark = GIF export
           var x = Math.round(frac * W);
           ctx.clearRect(0, 0, out.width, H); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, out.width, H);
           if (x > 0) ctx.drawImage(cvs[0], 0, 0, x, H, side, 0, x, H); if (W - x > 0) ctx.drawImage(cvs[1], x, 0, W - x, H, side + x, 0, W - x, H);
+          outline();
           ctx.fillStyle = '#ffeb3b'; ctx.fillRect(side + x - 1, 0, 2, H);
+          if (watermark) { ctx.save(); ctx.font = '8px Roboto, sans-serif'; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom'; ctx.shadowColor = 'rgba(0,0,0,0.9)'; ctx.shadowBlur = 2; ctx.fillStyle = '#fff'; ctx.fillText('source: MassMarshViewer.com', side + W - 3, H - 2); ctx.restore(); }
           label(old.year + ' \u2013 ' + (SRC_LABEL[old.source] || old.source), side / 2); label(nw.year + ' \u2013 ' + (SRC_LABEL[nw.source] || nw.source), side + W + side / 2);
         }
         function frame(now) {
@@ -166,7 +185,7 @@
           gb.disabled = true; gb.textContent = 'Encoding GIF...';
           import('https://cdn.jsdelivr.net/npm/gifenc@1.0.3/+esm').then(function (G) {
             var enc = G.GIFEncoder(); var N = 40;
-            for (var k = 0; k < N; k++) { var fr = k / (N - 1); paint(k < N / 2 ? fr * 2 : 2 - fr * 2); var data = ctx.getImageData(0, 0, out.width, H).data; var pal = G.quantize(data, 256); var idx = G.applyPalette(data, pal); enc.writeFrame(idx, out.width, H, { palette: pal, delay: 100, repeat: 0 }); }
+            for (var k = 0; k < N; k++) { var fr = k / (N - 1); paint(k < N / 2 ? fr * 2 : 2 - fr * 2, true); var data = ctx.getImageData(0, 0, out.width, H).data; var pal = G.quantize(data, 256); var idx = G.applyPalette(data, pal); enc.writeFrame(idx, out.width, H, { palette: pal, delay: 100, repeat: 0 }); }
             enc.finish(); var blob = new Blob([enc.bytes()], { type: 'image/gif' }); var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'pool_' + f.properties.st + '_' + f.properties.pid + '_' + String(old.year).slice(0, 4) + '_vs_' + String(nw.year).slice(0, 4) + '.gif'; a.click();
             gb.disabled = false; gb.textContent = 'Download GIF';
           }).catch(function (e) { gb.disabled = false; gb.textContent = 'Download GIF'; cap.textContent += ' (GIF encoding failed: ' + e.message + ')'; });
