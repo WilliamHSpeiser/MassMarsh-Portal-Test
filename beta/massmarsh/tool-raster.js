@@ -82,6 +82,7 @@
     R.panel = MM.seriesPanel(holder, { pointColor: '#9c27b0', seriesLabel: 'Pixel', clickWord: 'the map',
       titleFn: function (k) { var lab = R.seriesLabel || 'Pixel'; return k === 'main' ? lab + ' ' + S.opts.index + ' Time Series (' + S.opts.satellite + ')' : k === 'bp' ? S.opts.index + ' with Custom Breakpoints (' + S.opts.satellite + ')' : lab + ' ' + S.opts.index + ' with Change Point (' + S.opts.satellite + ')'; },
       captionFn: function (P) { return 'Landsat 5-9 (1985-present' + MM.SEASONS[R.chartSeason || S.opts.season.key].word + ') | ' + (P.nImages || '?') + ' images'; } });
+    ui.swipe = add(el('div')); ui.swipe.style.margin = '10px 0';         // imagery swipe of the clicked pixel / drawn region
     ui.legend = add(el('div')); ui.legend.style.margin = '10px 0';
     thin('light');
     add(button('← Change Satellite/Index', function () { showSettings('inspector'); }));
@@ -141,6 +142,7 @@
       if (req !== R.reqId) return; R.loading = false;
       if (!res || !res.pts) { R.panel.showError(info, MM.cubeAvailable() ? 'No time series data available.' : 'Pixel time series will appear once the series cube is published to the server.'); return; }
       R.panel.setSeries(MM.seasonFilterKey(res.pts, R.chartSeason), info, res.nImages, seasonExtra(latlng.lat));
+      if (ui.swipe) { var u = MM.toUtm(latlng.lng, latlng.lat), res_m = MM.cube(S.opts.satellite).res, e0 = Math.floor(u[0] / res_m) * res_m, n0 = Math.floor(u[1] / res_m) * res_m; var cs = [[e0, n0], [e0 + res_m, n0], [e0 + res_m, n0 + res_m], [e0, n0 + res_m], [e0, n0]].map(function (c) { return MM.fromUtm(c[0], c[1]); }); MM.imagerySwipe(ui.swipe, { geometry: { type: 'Polygon', coordinates: [cs] }, name: 'Pixel ' + latlng.lat.toFixed(5) + ', ' + latlng.lng.toFixed(5), pad: (100 - res_m) / 2, minBox: 100 }); }
     }).catch(function (e) { if (req !== R.reqId) return; R.loading = false; R.panel.showError(info, 'Error loading time series: ' + e.message); });
   }
   function seasonExtra(lat) { return { season: R.chartSeason, lat: lat, onSeason: function (k) { R.chartSeason = k; if (!R.last) return; if (R.last.kind === 'pixel') showPixel(R.last.arg); else showRegion(R.last.arg); } }; }
@@ -166,7 +168,7 @@
       var px = regionPixels(rings); var keys = Object.keys(px.byBlock);
       if (!keys.length) { R.loading = false; R.panel.showError(info, 'No time series data available.'); return; }
       if (keys.length > MAX_REGION_BLOCKS) { R.loading = false; info.push(el('div', 'pv-warn', 'Region too large for the averaged series (' + keys.length + ' blocks, max ' + MAX_REGION_BLOCKS + '); showing statistics only.')); R.panel.setSeries([], info, 0); return; }
-      return MM.meanSeries(px.byBlock, S.opts.index).then(function (res) { if (req !== R.reqId) return; R.loading = false; R.panel.setSeries(MM.seasonFilterKey(res.pts, R.chartSeason), info, res.nImages, seasonExtra((bb[1] + bb[3]) / 2)); });
+      return MM.meanSeries(px.byBlock, S.opts.index).then(function (res) { if (req !== R.reqId) return; R.loading = false; R.panel.setSeries(MM.seasonFilterKey(res.pts, R.chartSeason), info, res.nImages, seasonExtra((bb[1] + bb[3]) / 2)); if (ui.swipe) MM.imagerySwipe(ui.swipe, { geometry: { type: 'Polygon', coordinates: rings }, name: 'Region' }); });
     }).catch(function (e) { if (req !== R.reqId) return; R.loading = false; R.panel.showError(info, 'Error loading time series: ' + e.message); });
   }
 

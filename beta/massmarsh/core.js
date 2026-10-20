@@ -90,7 +90,7 @@ window.MM = (function () {
     if (!poolIndex) poolIndex = getJSON(poolsUrl('index.json')).catch(function (e) { poolIndex = null; throw e; });
     return poolIndex.then(function (idx) {
       var pad = 0.05; var b = [bbox[0] - pad, bbox[1] - pad, bbox[2] + pad, bbox[3] + pad];
-      var states = Object.keys(idx.states).filter(function (st) { return bboxIntersects(idx.states[st].bbox, b); });
+      var states = Object.keys(idx.states).filter(function (st) { return st === 'MA' && bboxIntersects(idx.states[st].bbox, b); });   // the public viewer shows Massachusetts only
       return Promise.all(states.map(function (st) {
         if (!poolFiles[st]) poolFiles[st] = getJSON(poolsUrl(idx.states[st].file)).catch(function (e) { delete poolFiles[st]; throw e; });
         return poolFiles[st];
@@ -378,6 +378,7 @@ window.MM = (function () {
   // ---------- landing page ----------
   var TOOL_LABELS = { assessment_report: 'Marsh Assessment Report', restoration_report: 'Restoration Efficacy Report', comprehensive_report: 'Comprehensive Report', pool_viewer: 'Pool Viewer', ditch_viewer: 'Ditch Viewer', raster_viewer: 'Raster Viewer', comprehensive_viewer: 'Comprehensive Viewer', uvvr_viewer: 'UVVR Viewer', lidar_viewer: 'LiDAR Viewer', historical_imagery: 'Historical Imagery Viewer' };
   function showLanding() {
+    if (basemapCtl) basemapCtl.getContainer().style.display = 'none';      // historical basemaps are a tool feature, not a landing-page one
     exitTool(); S.mode = 'landing'; S.step = 0; clearSide();
     if (S.only) {                                             // standalone page for one tool (tools/pool-viewer.html)
       var t = tools[S.only]; titlePanel(t ? t.label : S.only);
@@ -426,6 +427,7 @@ window.MM = (function () {
     if (!t) { b.disabled = true; b.title = 'Coming soon'; }
   }
   function startTool(id) {
+    if (basemapCtl) basemapCtl.getContainer().style.display = '';
     var t = tools[id]; if (!t) return;
     exitTool(); S.activeTool = id; S.mode = id;
     if (t.noSelection) { t.start(); return; }
@@ -751,6 +753,133 @@ window.MM = (function () {
     }
     return P;
   }
+
+  // ---------- imagery swipe (live view + GIF) of a feature: oldest colour image from 1990 on vs the newest, from the PMTiles archives ----------
+  // imagerySwipe(container, { geometry (Polygon/MultiPolygon/LineString/MultiLineString, lon/lat), name, pad = 15 m, minBox (m) })
+  var SW = { seq: 0, views: [], keep: null, docClick: false };
+  var SRC_LABEL = { MassGIS: 'MassGIS', NHAP: 'NHAP', CapeCod: 'Cape Cod', AutoGeoreferencer: 'Georeferenced aerial', NAIP: 'NAIP' };
+  function catYear(im) { var t = String(im.year), m = t.match(/(\d{4})/); return m ? +m[1] + (/\ds\b/.test(t) ? 5 : 0) : 9999; }
+  function lon2x(lon, z) { return (lon + 180) / 360 * 256 * Math.pow(2, z); }
+  function lat2y(lat, z) { var s = Math.sin(lat * Math.PI / 180); return (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * 256 * Math.pow(2, z); }
+  function coversBox(im, b) { var fb = featureBbox({ geometry: im.footprint }); if (!bboxIntersects(fb, b)) return false; var rings = ringsOf(im.footprint); return [[b[0], b[1]], [b[2], b[1]], [b[2], b[3]], [b[0], b[3]], [(b[0] + b[2]) / 2, (b[1] + b[3]) / 2]].every(function (c) { return pointInPolys(c[0], c[1], rings); }); }
+  function fetchWindow(im, b, W, H) {                         // canvas of the box [W x H px] from the archive's tiles at its maximum zoom
+    var z = Math.min(im.maxzoom || 18, 18); var x0 = lon2x(b[0], z), x1 = lon2x(b[2], z), y0 = lat2y(b[3], z), y1 = lat2y(b[1], z);
+    var cv = document.createElement('canvas'); cv.width = W; cv.height = H; var ctx = cv.getContext('2d'); var sx = W / (x1 - x0), sy = H / (y1 - y0);
+    var p = new pmtiles.PMTiles(serverUrl('imagery/' + im.file)); var jobs = [];
+    for (var tx = Math.floor(x0 / 256); tx <= Math.floor((x1 - 1) / 256); tx++) for (var ty = Math.floor(y0 / 256); ty <= Math.floor((y1 - 1) / 256); ty++) {
+      (function (tx, ty) { jobs.push(p.getZxy(z, tx, ty).then(function (t) { if (!t || !t.data) return; return createImageBitmap(new Blob([t.data])).then(function (bm) { ctx.drawImage(bm, (tx * 256 - x0) * sx, (ty * 256 - y0) * sy, 256 * sx, 256 * sy); }); }).catch(function () {})); })(tx, ty);
+    }
+    return Promise.all(jobs).then(function () { return cv; });
+  }
+  function stretchContrast(cv) {                               // 2-98 % percentile stretch per channel: slightly more contrast so water bodies stand out
+    var ctx = cv.getContext('2d'), img = ctx.getImageData(0, 0, cv.width, cv.height), d = img.data, n = d.length / 4;
+    for (var ch = 0; ch < 3; ch++) {
+      var hist = new Uint32Array(256), cnt = 0; for (var i = 0; i < n; i++) { if (d[i * 4 + 3] === 0) continue; hist[d[i * 4 + ch]]++; cnt++; }
+      if (!cnt) continue; var lo = 0, hi = 255, acc = 0, v; for (v = 0; v < 256; v++) { acc += hist[v]; if (acc >= cnt * 0.02) { lo = v; break; } } acc = 0; for (v = 255; v >= 0; v--) { acc += hist[v]; if (acc >= cnt * 0.02) { hi = v; break; } }
+      if (hi - lo < 20) continue; var k = 255 / (hi - lo), lut = new Uint8ClampedArray(256); for (v = 0; v < 256; v++) lut[v] = (v - lo) * k;
+      for (i = 0; i < n; i++) d[i * 4 + ch] = lut[d[i * 4 + ch]];
+    }
+    ctx.putImageData(img, 0, 0);
+  }
+  function imagerySwipe(container, o) {
+    container.innerHTML = ''; var seq = ++SW.seq; SW.views.slice().forEach(function (v) { v.destroy(); }); SW.views = [];
+    if (typeof pmtiles === 'undefined') return;
+    var fb = featureBbox({ geometry: o.geometry }); var u0 = toUtm(fb[0], fb[1]), u1 = toUtm(fb[2], fb[3]); var pad = o.pad || 15;
+    var e0 = u0[0] - pad, n0 = u0[1] - pad, e1 = u1[0] + pad, n1 = u1[1] + pad;
+    if (o.minBox) { var cx = (e0 + e1) / 2, cy = (n0 + n1) / 2, half = Math.max(o.minBox, e1 - e0, n1 - n0) / 2; e0 = cx - half; e1 = cx + half; n0 = cy - half; n1 = cy + half; }
+    var c0 = fromUtm(e0, n0), c1 = fromUtm(e1, n1); var b = [c0[0], c0[1], c1[0], c1[1]]; var wM = e1 - e0, hM = n1 - n0;
+    container.appendChild(el('div', 'pv-thin')); var note = el('div', 'pv-grey', 'Loading imagery...'); container.appendChild(note);   // own mini section under the chart notes
+    function isRgb(im) { return !/_BW\b/i.test(im.key || '') && !/^(AutoGeoreferencer|NHAP)$/.test(im.source || ''); }
+    imageryCatalog().then(function (cat) {
+      if (seq !== SW.seq) return;
+      var imgs = (cat.images || []).filter(function (im) { return im.footprint && coversBox(im, b); }).sort(function (p, q) { return catYear(p) - catYear(q); });
+      var since90 = imgs.filter(function (im) { return catYear(im) >= 1990; }); var sel = [since90.filter(isRgb)[0] || since90[0], imgs.length ? imgs[imgs.length - 1] : null];
+      if (SW.keep && SW.keep.name === o.name) SW.keep.keys.forEach(function (k, i) { var im = imgs.filter(function (x) { return x.key === k; })[0]; if (im) sel[i] = im; });   // keep the user's picks across panel re-renders
+      if (!sel[0] || !sel[1] || sel[0].key === sel[1].key) { note.textContent = 'Not enough imagery covers this area (need an image from 1990 on and a newer one).'; return; }
+      var Z = 18, X0 = lon2x(b[0], Z), X1 = lon2x(b[2], Z), Y0 = lat2y(b[3], Z), Y1 = lat2y(b[1], Z);   // outline in unit-square coordinates of the box (Mercator, linear in the box)
+      var g = o.geometry, closed = /Polygon$/.test(g.type);
+      var paths = closed ? ringsOf(g).reduce(function (a, poly) { return a.concat(poly); }, []) : (g.type === 'LineString' ? [g.coordinates] : g.type === 'MultiLineString' ? g.coordinates : []);
+      paths = paths.map(function (ring) { return ring.map(function (c) { return [(lon2x(c[0], Z) - X0) / (X1 - X0), (lat2y(c[1], Z) - Y0) / (Y1 - Y0)]; }); });
+      var st = { name: o.name, b: b, wM: wM, hM: hM, imgs: imgs, sel: sel, paths: paths, closed: closed, views: [] };
+      st.pick = function (i, im) { if (im.key === sel[i].key) return; sel[i] = im; SW.keep = { name: o.name, keys: [sel[0].key, sel[1].key] }; st.views.forEach(function (v) { v.reload(i); }); };
+      SW.keep = { name: o.name, keys: [sel[0].key, sel[1].key] }; SW.views = st.views;
+      var wrap = el('div', 'pv-swipe'); container.appendChild(wrap); var cap = el('div', 'pv-note'); container.appendChild(cap);
+      var view = swipeView(wrap, st, { size: 300, fontScale: 1, caption: cap, note: note });
+      var ex = el('button', 'pv-chart-expand'); ex.type = 'button'; ex.title = 'Expand'; ex.innerHTML = ICONS.expand; ex.addEventListener('click', function (ev) { ev.stopPropagation(); openSwipeModal(st); }); wrap.appendChild(ex);
+      var row = el('div', 'pv-row'); var gb = button('Download GIF', function () { view.gif(gb); }, 'small'); row.appendChild(gb); container.appendChild(row);
+    }).catch(function (e) { if (seq === SW.seq) note.textContent = 'Imagery not available: ' + e.message; });
+  }
+  // one rendering of the swipe (inline panel view or the expanded modal view); several views share the state st
+  function swipeView(parent, st, o) {
+    var fs = o.fontScale || 1, side = Math.round(18 * fs); var W = o.size, H = Math.max(Math.round(120 * fs), Math.round(W * st.hM / st.wM)); var maxH = o.maxH || 400 * fs; if (H > maxH) { H = Math.round(maxH); W = Math.round(H * st.wM / st.hM); }
+    var out = el('canvas'); out.width = W + 2 * side; out.height = H; out.style.cssText = 'max-width:100%;display:block;border:1px solid #999;background:#fff'; parent.appendChild(out);
+    var ctx = out.getContext('2d'), cvs = [null, null], hover = -1, t0 = performance.now(), alive = true, anim = null, menu = null; var v = { out: out };
+    function label(im) { return im.year + ' – ' + (SRC_LABEL[im.source] || im.source); }
+    function srcName(im) { return im.year + ' ' + (SRC_LABEL[im.source] || im.source); }
+    function caption() { if (o.caption) o.caption.textContent = st.name + ': box ' + Math.round(st.wM) + ' x ' + Math.round(st.hM) + ' m. Left: ' + srcName(st.sel[0]) + '; right: ' + srcName(st.sel[1]) + '. Click a side title to choose another image.'; }
+    function load(i) { var im = st.sel[i]; return fetchWindow(im, st.b, W, H).then(function (cv) { if (!alive) return; stretchContrast(cv); cvs[i] = cv; }); }
+    v.reload = function (i) { if (o.caption) o.caption.textContent = 'Loading ' + label(st.sel[i]) + '...'; return load(i).then(caption).catch(function (e) { if (o.caption) o.caption.textContent = 'Could not load ' + label(st.sel[i]) + ': ' + e.message; }); };
+    function paintTo(c, k, frac, exporting) {               // draw the view at scale k into context c; exporting = GIF frame (watermark, no arrows, no hover colour)
+      var w = W * k, h = H * k, sd = side * k, x = Math.round(frac * w), tw2 = (W + 2 * side) * k;
+      c.clearRect(0, 0, tw2, h); c.fillStyle = '#fff'; c.fillRect(0, 0, tw2, h);
+      if (cvs[0] && x > 0) c.drawImage(cvs[0], 0, 0, x / k, H, sd, 0, x, h); if (cvs[1] && w - x > 0) c.drawImage(cvs[1], x / k, 0, W - x / k, H, sd + x, 0, w - x, h);
+      c.save(); c.translate(sd, 0); c.lineJoin = 'round'; c.lineCap = 'round'; c.strokeStyle = '#00ffff'; c.shadowColor = 'rgba(0,255,255,0.95)';   // the feature: thin glowing cyan outline, no fill
+      st.paths.forEach(function (r) { c.beginPath(); r.forEach(function (p, i) { if (i) c.lineTo(p[0] * w, p[1] * h); else c.moveTo(p[0] * w, p[1] * h); }); if (st.closed) c.closePath(); c.shadowBlur = 8 * k; c.lineWidth = 1.2 * k; c.stroke(); c.shadowBlur = 3 * k; c.stroke(); });
+      c.restore();
+      c.fillStyle = '#ffeb3b'; c.fillRect(sd + x - k, 0, 2 * k, h);
+      [0, 1].forEach(function (i) {                         // rotated side titles; in the live view a small stemless right-pointing arrow marks the image menu, cyan while hovered
+        var cx = (i === 0 ? side / 2 : side + W + side / 2) * k, text = label(st.sel[i]), col = (!exporting && hover === i) ? '#00e5ff' : '#222';
+        c.save(); c.font = 'bold ' + (11 * fs * k) + 'px Roboto, sans-serif'; var tw = c.measureText(text).width; c.translate(cx, h / 2); c.rotate(-Math.PI / 2); c.fillStyle = col; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(text, 0, 0); c.restore();
+        if (!exporting) { var s = 4.5 * fs * k, ty = Math.max(2 * s + 2 * k, h / 2 - tw / 2 - 5 * fs * k); c.fillStyle = col; c.beginPath(); c.moveTo(cx - 0.8 * s, ty - 2 * s); c.lineTo(cx - 0.8 * s, ty); c.lineTo(cx + s, ty - s); c.closePath(); c.fill(); }
+      });
+      if (exporting) { c.save(); c.font = (13 * fs * k) + 'px Roboto, sans-serif'; c.textAlign = 'right'; c.textBaseline = 'bottom'; c.shadowColor = 'rgba(0,0,0,0.9)'; c.shadowBlur = 2 * k; c.fillStyle = '#fff'; c.fillText('source: MassMarshViewer.com', sd + w - 3 * k, h - 2 * k); c.restore(); }
+    }
+    function frame(now) { if (!alive || !out.isConnected) { anim = null; return; } var ph = ((now - t0) / 4000) % 2; paintTo(ctx, 1, ph < 1 ? ph : 2 - ph, false); anim = requestAnimationFrame(frame); }
+    function sideAt(ev) { var r = out.getBoundingClientRect(); var x = (ev.clientX - r.left) * out.width / r.width; return x < side ? 0 : x > side + W ? 1 : -1; }
+    function closeMenu() { if (menu) { menu.remove(); menu = null; } }
+    function openMenu(i) {
+      closeMenu(); menu = el('div', 'pv-swipe-menu'); menu.appendChild(el('div', 'pv-swipe-menu-h', (i === 0 ? 'Left' : 'Right') + ' image'));
+      st.imgs.forEach(function (im) {
+        var it = el('div', 'pv-swipe-item' + (im.key === st.sel[i].key ? ' sel' : ''), label(im));
+        it.addEventListener('click', function (ev) { ev.stopPropagation(); closeMenu(); st.pick(i, im); }); menu.appendChild(it);
+      });
+      var r = out.getBoundingClientRect(), pr = parent.getBoundingClientRect(), scale = r.width / out.width;
+      menu.style.left = Math.round(r.left - pr.left + (i === 0 ? side : side + W + side) * scale) + 'px'; menu.style.top = Math.round(r.top - pr.top + 4) + 'px'; parent.appendChild(menu);
+      var mw = menu.offsetWidth; if (menu.offsetLeft + mw > parent.clientWidth) menu.style.left = Math.max(0, parent.clientWidth - mw) + 'px';
+    }
+    out.addEventListener('mousemove', function (ev) { var s = sideAt(ev); if (s !== hover) { hover = s; out.style.cursor = s >= 0 ? 'pointer' : ''; } });
+    out.addEventListener('mouseleave', function () { hover = -1; out.style.cursor = ''; });
+    out.addEventListener('click', function (ev) { ev.stopPropagation(); var s = sideAt(ev); if (s >= 0) openMenu(s); else closeMenu(); });
+    v.closeIfOutside = function (ev) { if (menu && !menu.contains(ev.target) && ev.target !== out) closeMenu(); };
+    if (!SW.docClick) { SW.docClick = true; document.addEventListener('click', function (ev) { SW.views.forEach(function (x) { x.closeIfOutside(ev); }); }); }
+    v.gif = function (btn) {                                   // one sweep left -> right -> left, 40 frames at 100 ms, at most 700 px on the long side, encoded in the browser (gifenc)
+      btn.disabled = true; btn.textContent = 'Encoding GIF...';
+      var k = Math.min(1, 700 / Math.max(out.width, out.height)); var gw = Math.round(out.width * k), gh = Math.round(H * k); var gc = document.createElement('canvas'); gc.width = gw; gc.height = gh; var g2 = gc.getContext('2d');
+      import('https://cdn.jsdelivr.net/npm/gifenc@1.0.3/+esm').then(function (G) {
+        var enc = G.GIFEncoder(); var N = 40;
+        for (var j = 0; j < N; j++) { var fr = j / (N - 1); paintTo(g2, k, j < N / 2 ? fr * 2 : 2 - fr * 2, true); var data = g2.getImageData(0, 0, gw, gh).data; var pal = G.quantize(data, 256); var idx = G.applyPalette(data, pal); enc.writeFrame(idx, gw, gh, { palette: pal, delay: 100, repeat: 0 }); }
+        enc.finish(); var blob = new Blob([enc.bytes()], { type: 'image/gif' }); var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = st.name.replace(/[^\w\-]+/g, '_').replace(/^_+|_+$/g, '') + '_' + String(st.sel[0].year).slice(0, 4) + '_vs_' + String(st.sel[1].year).slice(0, 4) + '.gif'; a.click();
+        btn.disabled = false; btn.textContent = 'Download GIF';
+      }).catch(function (e) { btn.disabled = false; btn.textContent = 'Download GIF'; if (o.caption) o.caption.textContent += ' (GIF encoding failed: ' + e.message + ')'; });
+    };
+    v.destroy = function () { alive = false; if (anim) cancelAnimationFrame(anim); closeMenu(); if (out.parentNode) out.parentNode.removeChild(out); var i = st.views.indexOf(v); if (i >= 0) st.views.splice(i, 1); };
+    st.views.push(v);
+    Promise.all([load(0), load(1)]).then(function () { if (!alive) return; if (o.note) o.note.remove(); caption(); anim = requestAnimationFrame(frame); }).catch(function (e) { if (o.note) o.note.textContent = 'Imagery not available: ' + e.message; else if (o.caption) o.caption.textContent = 'Imagery not available: ' + e.message; });
+    return v;
+  }
+  function openSwipeModal(st) {                                // the swipe near full-window size: same images, titles, menus; Download GIF; X / Esc / backdrop closes
+    var ov = el('div', 'pv-chart-modal'); var box = el('div', 'pv-chart-modal-box'); ov.appendChild(box);
+    var x = el('button', 'pv-chart-modal-x'); x.type = 'button'; x.title = 'Close'; x.innerHTML = ICONS.x; box.appendChild(x);
+    var holder = el('div', 'pv-swipe pv-swipe-big'); box.appendChild(holder); var cap = el('div', 'pv-caption'); box.appendChild(cap);
+    var foot = el('div', 'pv-chart-modal-foot'); var gb = button('Download GIF', function () { view.gif(gb); }); foot.appendChild(gb); box.appendChild(foot);
+    document.body.appendChild(ov);
+    var availW = box.clientWidth - 48, availH = Math.max(200, box.clientHeight - foot.offsetHeight - 36 - 14 - 40); var fs = 1.6, side = Math.round(18 * fs);
+    var W = Math.max(120, Math.min(availW - 2 * side, Math.round(availH * st.wM / st.hM)));
+    var view = swipeView(holder, st, { size: W, fontScale: fs, maxH: availH, caption: cap });
+    function onKey(e) { if (e.key === 'Escape') close(); }
+    function close() { view.destroy(); if (ov.parentNode) ov.parentNode.removeChild(ov); document.removeEventListener('keydown', onKey); }
+    x.addEventListener('click', close); ov.addEventListener('click', function (e) { if (e.target === ov) close(); }); document.addEventListener('keydown', onKey);
+  }
   // legends sit on the map (lower left, translucent box) rather than in the side panel; the panel container passed by the tools stays empty
   var legendBox = null;
   function mapLegend(node) {
@@ -893,7 +1022,7 @@ window.MM = (function () {
   function placeMapTools() {
     if (measureCtl) map.removeControl(measureCtl); if (basemapCtl) map.removeControl(basemapCtl);
     measureCtl = mapToolControl('measure', ICONS.ruler, 'Measure distances and areas', measureItems).addTo(map);
-    if (typeof pmtiles !== 'undefined') basemapCtl = mapToolControl('basemap', ICONS.layers, 'Basemap: historical imagery available for this area', basemapItems).addTo(map);
+    if (typeof pmtiles !== 'undefined') { basemapCtl = mapToolControl('basemap', ICONS.layers, 'Basemap: historical imagery available for this area', basemapItems).addTo(map); if (!S.activeTool) basemapCtl.getContainer().style.display = 'none'; }   // shown inside the tools only
   }
   map.on('click', closeMapTools);
   function busy(st) { return !!st.loading && Date.now() - (st.loadingSince || 0) < 45000; }   // a stuck 'loading' flag must not block clicks forever
@@ -1052,7 +1181,7 @@ window.MM = (function () {
     inSelection: inSelection, selectionPools: selectionPools, selectionDitches: selectionDitches, selectionScenes: selectionScenes, selectionUnits: selectionUnits, drawHighlight: drawHighlight, exitTool: exitTool, showLanding: showLanding, showAreaSelection: showAreaSelection,
     removeLayer: removeLayer, addToolLayer: addToolLayer, removeToolLayer: removeToolLayer, clearToolLayers: clearToolLayers, clearAllLayers: clearAllLayers,
     armDraw: armDraw, stopDraw: stopDraw, isDrawing: isDrawing, setClickHandler: setClickHandler, addSwitcher: addSwitcher, removeSwitcher: removeSwitcher,
-    linearFit: linearFit, xy: xy, fitSeries: fitSeries, percentile: percentile, nearestRank: nearestRank, rampColor: rampColor, hexToRgb: hexToRgb, seasonFilter: seasonFilter, seasonFilterKey: seasonFilterKey, glowLayer: glowLayer, ICONS: ICONS, limitIndexes: limitIndexes, tideStationFor: tideStationFor, tideTable: tideTable, TIDE_STATIONS: TIDE_STATIONS, dayPts: dayPts,
+    linearFit: linearFit, xy: xy, fitSeries: fitSeries, percentile: percentile, nearestRank: nearestRank, rampColor: rampColor, hexToRgb: hexToRgb, seasonFilter: seasonFilter, seasonFilterKey: seasonFilterKey, glowLayer: glowLayer, ICONS: ICONS, limitIndexes: limitIndexes, imagerySwipe: imagerySwipe, tideStationFor: tideStationFor, tideTable: tideTable, TIDE_STATIONS: TIDE_STATIONS, dayPts: dayPts,
     trendDataset: trendDataset, scatterDs: scatterDs, drawChart: drawChart, caption: caption, seriesPanel: seriesPanel, legendBlock: legendBlock, mapLegend: mapLegend, imageryCatalog: imageryCatalog, setBasemap: setBasemap, startMeasure: startMeasure, busy: busy, listservDialog: listservDialog,
     cubeReady: cubeReady, cubeAvailable: cubeAvailable, cube: cube, CUBES: CUBES, pkey: pkey, platName: platName, loadBlock: loadBlock, cubeLocate: cubeLocate, cubeLocateUtm: cubeLocateUtm, pixelSeries: pixelSeries, pixelSeriesFromBlock: pixelSeriesFromBlock, meanSeries: meanSeries, pool: pool, gridMask: gridMask, cubePixelsInMask: cubePixelsInMask, selectionMask: selectionMask, bandIndex: bandIndex,
     POOL_DS: POOL_DS, POOL_PROVENANCE: POOL_PROVENANCE, poolDataset: poolDataset, poolSlopeProps: poolSlopeProps, poolSlopeOf: poolSlopeOf, poolStatsLine: poolStatsLine, poolSeriesPts: poolSeriesPts, seriesDir: seriesDir, enableSentinel2: enableSentinel2, loadServerRaster: loadServerRaster, loadSlopeRaster: loadSlopeRaster,

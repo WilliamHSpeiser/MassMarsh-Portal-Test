@@ -81,6 +81,7 @@
     D.panel = MM.seriesPanel(holder, { pointColor: '#2196F3', seriesLabel: 'Ditch mean', clickWord: 'a ditch',
       titleFn: function (k) { return k === 'main' ? 'Ditch Mean ' + S.opts.index + ' Time Series (Landsat)' : k === 'bp' ? S.opts.index + ' with Custom Breakpoints (Landsat)' : S.opts.index + ' with Change Point (Landsat)'; },
       captionFn: function (P) { return 'Landsat 5-9 (1984-present) | ' + (P.nImages || '?') + ' images'; } });
+    ui.swipe = add(el('div')); ui.swipe.style.margin = '10px 0';         // imagery swipe of the selected ditch (under the chart notes)
     ui.legend = add(el('div')); ui.legend.style.margin = '10px 0';
     MM.citation(MM.CITATIONS.ditches);
     add(button('← Change Satellite/Index', function () { S.step = 3; showSettings('mono'); }));
@@ -98,6 +99,7 @@
       info.push(el('div', 'pv-small', 'Valid observations: ' + pts.length));
       if (!pts.length) { D.panel.showError(info, MM.cubeAvailable() ? 'No time series data available.' : 'Time series will appear once the series cube is published to the server.'); return; }
       D.panel.setSeries(pts, info, res.nImages, { season: D.chartSeason || 'all', lat: latlng.lat, onSeason: function (k) { D.chartSeason = k; if (D.last) monoClick(D.last.f, D.last.latlng); } });
+      if (ui.swipe) MM.imagerySwipe(ui.swipe, { geometry: f.geometry, name: 'Ditch ' + (f.properties.id !== undefined ? f.properties.id : f.properties.did !== undefined ? f.properties.did : f.properties.fid !== undefined ? f.properties.fid : '') });
     }).catch(function (e) { if (req !== D.reqId) return; D.loading = false; D.panel.showError([], 'Error loading time series: ' + e.message); });
   }
 

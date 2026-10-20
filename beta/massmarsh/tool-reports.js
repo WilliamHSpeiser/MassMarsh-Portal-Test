@@ -12,12 +12,14 @@
   var VEG = { neg: 'Bare', pos: 'Verdant', negC: '#8B4513', posC: '#228B22', repNeg: '#8B4513', repPos: '#008000', grad: '#8B4513, white, #008000', negWord: 'browning', posWord: 'greening' };
   var POOL_D = { shortLabel: 'Landsat MNDWI', window: 'summer scenes 1985-2026', label: 'Landsat MNDWI, summer scenes 1985-2026', units: 'MNDWI/yr', negLabel: 'Drier', posLabel: 'Wetter', negColor: '#FF8C00', posColor: '#2196F3', palette: ['#FF8C00', '#FFFFFF', '#0000FF'], grad: '#FF8C00, #FFFFFF, #0000FF',
     definition: 'Per-pool least-squares slope of pool-mean Landsat MNDWI on June-August scenes, 1985-2026 (at least 14 scenes).',
-    provenance: 'Pool polygons and per-pool summer slopes: projects/massmarsh/assets/pools_landsat_summer_slope_1985_2026_20260923. Landsat MNDWI: Per-pool least-squares slope of pool-mean Landsat MNDWI on June-August scenes, 1985-2026 (at least 14 scenes). Sentinel-2 MNDWI: Per-pool least-squares slope of marsh-referenced, low-tide, June-August Sentinel-2 MNDWI, 2015-2023. Only MA, NH, ME and RI pools have values. Significance: |t| >= 2.' };
+    provenance: 'Pool polygons and per-pool summer slopes: projects/massmarsh/assets/pools_landsat_summer_slope_1985_2026_20260923. Landsat MNDWI: Per-pool least-squares slope of pool-mean Landsat MNDWI on June-August scenes, 1985-2026 (at least 14 scenes). Sentinel-2 MNDWI: Per-pool least-squares slope of marsh-referenced, low-tide, June-August Sentinel-2 MNDWI, 2015-2023. Significance: |t| >= 2.' };
   var CIT_UNITS = 'Ackerman, K.V., Defne, Z., and Ganju, N.K. (2021). Geospatial Characterization of Salt Marshes for Massachusetts (Conceptual marsh units of Massachusetts salt marshes). <em>U.S. Geological Survey data release</em>, https://doi.org/10.5066/P97E086F';
   var CIT_DITCH = 'Peck, E. K., Walker, J. E., Ackerman, K. V., Carr, J., Correll, M. D., Defne, Z., ... &amp; Yellen, B. (2025). Distribution and disturbances of ditches across salt marshes of the Northeast US with implications for management and restoration. <em>Journal of Environmental Management</em>, 376, 124444.';
   function words() { return S.opts.index === 'NDVI' ? VEG : WATER; }
   function fmtNum(v, d) { return (v === null || v === undefined || !isFinite(v)) ? 'N/A' : Number(v).toFixed(d); }
-  function fmtArea(m2) { if (m2 === null || m2 === undefined) return 'N/A'; var ha = m2 / 10000; return ha >= 1 ? ha.toFixed(2) + ' ha' : m2.toFixed(0) + ' m²'; }
+  function fmtArea(m2) { if (m2 === null || m2 === undefined) return 'N/A'; var km2 = m2 / 1e6; return (km2 >= 0.1 ? km2.toFixed(2) : km2.toFixed(3)) + ' km\u00b2'; }
+  function fmtKm(m) { return (m === null || m === undefined) ? 'N/A' : (m / 1000).toFixed(2) + ' km'; }
+  function fmtDensity(m_per_m2) { return (m_per_m2 === null || m_per_m2 === undefined) ? 'N/A' : (m_per_m2 * 1000).toFixed(2) + ' km/km\u00b2'; }
   function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
   function poolFallback() { return S.opts.index === 'MNDWI' ? null : 'Per-pool Landsat ' + S.opts.index + ' slope statistics are not available yet. Pools are coloured and ranked by Landsat MNDWI slope (summer scenes 1985-2026). Charts show the Landsat ' + S.opts.index + ' summer (Jun-Aug) trajectory computed on the fly.'; }
   function availabilityText() { return 'Per-pool slope statistics exist for Landsat MNDWI (summer scenes 1985-2026, all states) and Sentinel-2 MNDWI (summer + low tide 2015-2023; MA, NH, ME, RI only). ' + (S.opts.index === 'MNDWI' ? 'Your selection (Landsat MNDWI) has stored slopes. Pool charts use summer (Jun-Aug) scenes only.' : 'Your selection (Landsat ' + S.opts.index + ') has no stored pool slopes yet: charts show the summer-only trajectory computed on the fly and pools are coloured by Landsat MNDWI.'); }
@@ -99,11 +101,11 @@
     s += '<text x="' + (mL + iw / 2) + '" y="' + (H - 8) + '" font-size="10" text-anchor="middle">' + esc(xLabel) + '</text><text transform="translate(14,' + (mT + ih / 2) + ') rotate(-90)" font-size="10" text-anchor="middle">Count</text></svg>';
     return s;
   }
-  function panelHistogram(container, slopes, title, xLabel, colors) {
-    var b = bins15(slopes); var ds = [{ label: words().neg, data: b.centres.map(function (c, i) { return { x: c, y: b.neg[i] }; }), backgroundColor: colors[0] }, { label: words().pos, data: b.centres.map(function (c, i) { return { x: c, y: b.pos[i] }; }), backgroundColor: colors[1] }];
+  function panelHistogram(container, slopes, title, xLabel, colors, labels) {   // labels: [negative, positive] legend texts (the wetter / drier counts live here)
+    var b = bins15(slopes); var ds = [{ label: labels ? labels[0] : words().neg, data: b.centres.map(function (c, i) { return { x: c, y: b.neg[i] }; }), backgroundColor: colors[0] }, { label: labels ? labels[1] : words().pos, data: b.centres.map(function (c, i) { return { x: c, y: b.pos[i] }; }), backgroundColor: colors[1] }];
     container.innerHTML = ''; var wrap = el('div', 'pv-chart-wrap'); wrap.style.height = '180px'; var cv = el('canvas'); wrap.appendChild(cv); container.appendChild(wrap);
     if (container._chart) container._chart.destroy();
-    container._chart = new Chart(cv, { type: 'bar', data: { datasets: ds }, options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { display: false }, title: { display: true, text: title, font: { size: 11 } } },
+    container._chart = new Chart(cv, { type: 'bar', data: { datasets: ds }, options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { display: true, position: 'top', align: 'end', labels: { boxWidth: 10, font: { size: 10 } } }, title: { display: true, text: title, font: { size: 11 } } },
       scales: { x: { type: 'linear', min: -0.03, max: 0.03, stacked: true, title: { display: true, text: xLabel }, ticks: { font: { size: 9 } }, offset: false }, y: { stacked: true, beginAtZero: true, title: { display: true, text: 'Count' } } }, datasets: { bar: { barPercentage: 0.9, categoryPercentage: 1 } } } });
   }
 
@@ -124,7 +126,7 @@
     cb('Pools', 'pools', function (panel) {
       panel.appendChild(el('div', 'pv-h', '# Pools in Report?')); var cap = el('div', 'pv-note', 'Number of pools with the steepest positive stored slopes to include (maximum 25; eligibility counted with Landsat MNDWI here, re-checked on the next step):'); panel.appendChild(cap);
       var row = el('div', 'pv-row'); var sl = el('input'); sl.type = 'range'; sl.min = 1; sl.max = 25; sl.step = 1; sl.value = A.opts.numPools; var lab = el('span', 'pv-note', A.opts.numPools + ' pool' + (A.opts.numPools === 1 ? '' : 's')); sl.addEventListener('input', function () { A.opts.numPools = parseInt(sl.value, 10); lab.textContent = A.opts.numPools + ' pool' + (A.opts.numPools === 1 ? '' : 's'); }); row.appendChild(sl); row.appendChild(lab); panel.appendChild(row);
-      var av = el('div', 'pv-note', availabilityText()); av.style.cssText = 'color:#888;font-style:italic'; panel.appendChild(av);
+      var av = null;
       Promise.all([MM.load('pools'), MM.selectionPools()]).then(function (r) { if (req !== A.reqId) return; var n = eligiblePools(r[1].map(function (g) { return r[0].byPid[g]; }).filter(Boolean)).length; var M = Math.max(1, Math.min(25, n)); cap.textContent = 'Number of pools with the steepest positive stored slopes to include (maximum ' + M + '; this selection has ' + n + ' pool' + (n === 1 ? '' : 's') + ' eligible, counted with Landsat MNDWI here and re-checked on the next step):'; sl.max = M; if (A.opts.numPools > M) { A.opts.numPools = M; sl.value = M; lab.textContent = M + ' pool' + (M === 1 ? '' : 's'); } });
     });
     cb('Ditches', 'ditches');
@@ -142,7 +144,7 @@
   function showSatelliteIndex() {
     aui = {}; clearReportLayers(); MM.clearSide(); MM.titlePanel(A.comprehensive ? 'Comprehensive Report' : 'Assessment Report');
     add(el('div', 'pv-h lg', 'Select Satellite and Index:'));
-    var av = null; if (A.opts.pools) { av = add(el('div', 'pv-note')); av.style.cssText = 'color:#888;font-style:italic'; }
+    var av = null;                                             // (availability note removed)
     add(el('div', 'pv-p', 'Satellite:')); add(MM.select([['Landsat (30m, 1984-Current)', 'Landsat'], ['Sentinel-2 (10m, 2015-Current)', 'Sentinel-2', true]], 'Landsat', '280px'));
     add(el('div', 'pv-p', 'Index:')); var idxSel = add(MM.select([['Water Index (MNDWI)', 'MNDWI'], ['Vegetation Index (NDVI)', 'NDVI']], S.opts.index === 'NDVI' ? 'NDVI' : 'MNDWI', '280px'));   // reports are Landsat only: no NDWI
     function refresh() { S.opts.index = idxSel.value; if (av) { av.textContent = availabilityText(); Promise.all([MM.load('pools'), MM.selectionPools()]).then(function (r) { var n = r[1].filter(function (g) { var f = r[0].byPid[g]; return f && f.properties.sl !== null && f.properties.sl !== undefined; }).length; av.textContent = availabilityText() + ' ' + n + ' pool' + (n === 1 ? ' in this selection has' : 's in this selection have') + ' a Landsat MNDWI slope; the report will highlight at most ' + n + '.'; }); } }
@@ -188,10 +190,10 @@
     if (vals.length) { var mn = sorted[0], mx = sorted[sorted.length - 1]; var bw = Math.max(0.002, (mx - mn) / 30 || 0.002); var nb = Math.min(30, Math.max(1, Math.ceil((mx - mn) / bw) + 1)); var hist = new Array(nb).fill(0); vals.forEach(function (v) { hist[Math.min(nb - 1, Math.floor((v - mn) / bw))]++; }); A.stats.marshHist = { bucketMin: mn, bucketWidth: bw, histogram: hist, bucketMeans: hist.map(function (_, i) { return mn + (i + 0.5) * bw; }) }; }
     if (g) MM.addToolLayer('raster', new GeoRasterLayer({ georaster: g, opacity: 1, resolution: 256, mask: S.selection.maskGeometry, mask_strategy: 'outside', pixelValuesToColorFn: function (px) { var v = px[0]; if (v === null || v === undefined || !isFinite(v) || v === g.noDataValue) return null; return MM.rampColor(v, slopePalette().map(function (c) { return c === 'white' ? '#FFFFFF' : c === 'blue' ? '#0000FF' : c; }), A.stats.slopeMin, A.stats.slopeMax); } }));
     var b = block('Marsh Trajectory (Landsat ' + S.opts.index + '):');
-    b.appendChild(el('div', 'pv-small', 'Area: ' + fmtArea(area))); b.appendChild(el('div', 'pv-small', 'Mean Slope: ' + fmtNum(mean, 5) + ' /year')); b.appendChild(el('div', 'pv-small', 'Median Slope: ' + fmtNum(median, 5) + ' /year'));
+    b.appendChild(el('div', 'pv-small', 'Area: ' + fmtArea(area) + ' | Mean Slope: ' + fmtNum(mean, 5) + ' /year | Median Slope: ' + fmtNum(median, 5) + ' /year'));
     var tr = el('div', 'pv-h', 'Overall trend: ' + (mean !== null && mean >= 0 ? w.pos : w.neg)); tr.style.color = mean !== null && mean >= 0 ? w.posC : w.negC; b.appendChild(tr);
-    if (A.stats.marshHist) { var ch = el('div'); b.appendChild(ch); var h = A.stats.marshHist; var ds = [{ label: w.neg, data: h.bucketMeans.map(function (c, i) { return { x: c, y: c < 0 ? h.histogram[i] : 0 }; }), backgroundColor: w.negC }, { label: w.pos, data: h.bucketMeans.map(function (c, i) { return { x: c, y: c >= 0 ? h.histogram[i] : 0 }; }), backgroundColor: w.posC }];
-      var wrap = el('div', 'pv-chart-wrap'); wrap.style.height = '180px'; var cv = el('canvas'); wrap.appendChild(cv); ch.appendChild(wrap); new Chart(cv, { type: 'bar', data: { datasets: ds }, options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { display: false }, title: { display: true, text: 'Marsh Pixel ' + S.opts.index + ' Slope Distribution', font: { size: 11 } } }, scales: { x: { type: 'linear', min: -0.03, max: 0.03, stacked: true, title: { display: true, text: 'Slope (' + S.opts.index + '/year)' }, ticks: { font: { size: 9 } } }, y: { stacked: true, beginAtZero: true, title: { display: true, text: 'Pixel Count' } } } } }); }
+    if (A.stats.marshHist) { var ch = el('div'); b.appendChild(ch); var h = A.stats.marshHist; var nNeg = vals.filter(function (v) { return v < 0; }).length, nPos = vals.length - nNeg; var ds = [{ label: w.neg + ' (slope < 0): ' + nNeg + ' px', data: h.bucketMeans.map(function (c, i) { return { x: c, y: c < 0 ? h.histogram[i] : 0 }; }), backgroundColor: w.negC }, { label: w.pos + ' (slope \u2265 0): ' + nPos + ' px', data: h.bucketMeans.map(function (c, i) { return { x: c, y: c >= 0 ? h.histogram[i] : 0 }; }), backgroundColor: w.posC }];
+      var wrap = el('div', 'pv-chart-wrap'); wrap.style.height = '180px'; var cv = el('canvas'); wrap.appendChild(cv); ch.appendChild(wrap); new Chart(cv, { type: 'bar', data: { datasets: ds }, options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { display: true, position: 'top', align: 'end', labels: { boxWidth: 10, font: { size: 10 } } }, title: { display: true, text: 'Marsh Pixel ' + S.opts.index + ' Slope Distribution', font: { size: 11 } } }, scales: { x: { type: 'linear', min: -0.03, max: 0.03, stacked: true, title: { display: true, text: 'Slope (' + S.opts.index + '/year)' }, ticks: { font: { size: 9 } } }, y: { stacked: true, beginAtZero: true, title: { display: true, text: 'Pixel Count' } } } } }); }
   }
   function poolStats() {
     return Promise.all([MM.load('pools'), MM.selectionPools()]).then(function (r) {
@@ -204,14 +206,10 @@
       MM.addToolLayer('pools', L.geoJSON({ type: 'FeatureCollection', features: feats }, { renderer: MM.canvas, interactive: false, style: function (f) { var v = f.properties.sl; if (v === null || v === undefined) return { color: '#888888', fillColor: '#888888', fillOpacity: 0.2, weight: 1 }; var c = threeClass(v, st.colorMin, st.colorMax, POOL_D.palette); return { color: c, fillColor: c, fillOpacity: 0.53, weight: 1 }; } }));
       A.poolCandidates = eligiblePools(feats).sort(function (a, b) { return b.properties.sl - a.properties.sl; }).slice(0, A.opts.numPools + 10);
       var b = block('Pool Statistics (' + POOL_D.label + '):'); var fb = poolFallback(); if (fb) { var n = el('div', 'pv-note', fb); n.style.cssText = 'color:#a65a00;font-style:italic'; b.appendChild(n); }
-      b.appendChild(el('div', 'pv-small', 'Total Pools: ' + st.count));
-      if (!st.count) { var e1 = el('div', 'pv-small', 'No pools found in this marsh.'); e1.style.fontStyle = 'italic'; b.appendChild(e1); renderTopPools(); return; }
-      b.appendChild(el('div', 'pv-h', 'Pool Cover: ' + fmtNum(st.cover, 2) + '%'));
+      if (!st.count) { var e1 = el('div', 'pv-small', 'Total Pools: 0. No pools found in this marsh.'); e1.style.fontStyle = 'italic'; b.appendChild(e1); renderTopPools(); return; }
+      b.appendChild(el('div', 'pv-small', 'Total Pools: ' + st.count + ' | Pool Cover: ' + fmtNum(st.cover, 2) + '% | With stored slope: ' + st.withSlope + ' (no data: ' + st.noData + ')'));
       if (!st.withSlope) { b.appendChild(el('div', 'pv-small', st.count + ' pools in selection; none has a Landsat MNDWI slope.')); renderTopPools(); return; }
-      b.appendChild(el('div', 'pv-small', 'With stored slope: ' + st.withSlope + ' (No data: ' + st.noData + ')'));
-      var w1 = el('div', 'pv-small', 'Wetter (slope > 0): ' + st.wetter + ' (' + st.wetterSig + ' significant, |t| >= 2)'); w1.style.color = POOL_D.posColor; b.appendChild(w1);
-      var w2 = el('div', 'pv-small', 'Drier (slope < 0): ' + st.drier + ' (' + st.drierSig + ' significant)'); w2.style.color = POOL_D.negColor; b.appendChild(w2);
-      var ch = el('div'); b.appendChild(ch); panelHistogram(ch, slopes, 'Landsat MNDWI Pool Slope Distribution (summer scenes 1985-2026)', 'Slope (MNDWI/yr)', [POOL_D.negColor, POOL_D.posColor]);
+      var ch = el('div'); b.appendChild(ch); panelHistogram(ch, slopes, 'Landsat MNDWI Pool Slope Distribution (summer scenes 1985-2026)', 'Slope (MNDWI/yr)', [POOL_D.negColor, POOL_D.posColor], ['Drier (slope < 0): ' + st.drier + ' (' + st.drierSig + ' significant, |t| \u2265 2)', 'Wetter (slope > 0): ' + st.wetter + ' (' + st.wetterSig + ' significant)']);
       renderTopPools();
     });
   }
@@ -235,10 +233,10 @@
       st.density = area ? st.totalLength / area * 10000 : 0; var m = valid.length ? Math.max(Math.abs(MM.percentile(valid, 0.02)), Math.abs(MM.percentile(valid, 0.98))) : 0; st.colorMin = m ? -m : A.stats.slopeMin; st.colorMax = m || A.stats.slopeMax; A.stats.ditches = st; A.stats.ditchFeats = feats;
       var pal = slopePalette();
       MM.addToolLayer('ditches', L.geoJSON({ type: 'FeatureCollection', features: feats.filter(function (f) { return prop && f.properties[prop] !== null && f.properties[prop] !== undefined; }) }, { renderer: MM.canvas, interactive: false, style: function (f) { return { color: threeClass(f.properties[prop], st.colorMin, st.colorMax, pal), weight: 2 }; } }));
-      var b = block('Ditch Statistics:'); b.appendChild(el('div', 'pv-small', 'Total Ditches: ' + st.count));
-      if (st.count) { b.appendChild(el('div', 'pv-small', 'Total Length: ' + fmtNum(st.totalLength, 1) + ' m')); b.appendChild(el('div', 'pv-h', 'Ditch Density: ' + fmtNum(st.density, 2) + ' m/ha'));
+      var b = block('Ditch Statistics:');
+      if (st.count) { b.appendChild(el('div', 'pv-small', 'Total Ditches: ' + st.count + ' | Total Length: ' + fmtKm(st.totalLength) + ' | Ditch Density: ' + fmtDensity(area ? st.totalLength / area : null)));
         if (st.unavailable) { var u = el('div', 'pv-note', 'Ditch slope statistics are not available for Landsat ' + S.opts.index + '.'); u.style.cssText = 'color:#a65a00;font-style:italic'; b.appendChild(u); }
-        else if (valid.length) { var w1 = el('div', 'pv-small', w.pos + ' (slope ≥ 0): ' + st.wetter); w1.style.color = w.posC; b.appendChild(w1); var w2 = el('div', 'pv-small', w.neg + ' (slope < 0): ' + st.drier); w2.style.color = w.negC; b.appendChild(w2); var ch = el('div'); b.appendChild(ch); panelHistogram(ch, valid, 'Ditch ' + S.opts.index + ' Slope Distribution', 'Slope (' + S.opts.index + '/year)', [w.negC, w.posC]); }
+        else if (valid.length) { var ch = el('div'); b.appendChild(ch); panelHistogram(ch, valid, 'Ditch ' + S.opts.index + ' Slope Distribution', 'Slope (' + S.opts.index + '/year)', [w.negC, w.posC], [w.neg + ' (slope < 0): ' + st.drier, w.pos + ' (slope \u2265 0): ' + st.wetter]); }
         else { var e2 = el('div', 'pv-note', 'Slope data unavailable for these ditches.'); e2.style.fontStyle = 'italic'; b.appendChild(e2); } }
       else { var e1 = el('div', 'pv-small', 'No ditches found in this marsh.'); e1.style.fontStyle = 'italic'; b.appendChild(e1); }
     });
@@ -253,8 +251,8 @@
       MM.addToolLayer('units', L.geoJSON({ type: 'FeatureCollection', features: feats.filter(function (f) { return f.properties[prop] !== null && f.properties[prop] !== undefined; }) }, { renderer: MM.canvas, interactive: false, style: function (f) { var c = threeClass(f.properties[prop], st.colorMin, st.colorMax, pal); return { color: c, fillColor: c, weight: 1, fillOpacity: 1 }; } }));
       if (MM.layers.tool.pools) MM.layers.tool.pools.bringToFront(); if (MM.layers.tool.ditches) MM.layers.tool.ditches.bringToFront();
       A.unitCandidates = feats.filter(function (f) { return f.properties[prop] !== null && f.properties[prop] !== undefined; }).sort(function (a, b) { return b.properties[prop] - a.properties[prop]; }).slice(0, A.opts.numMarshUnits + 10);
-      var b = block('Marsh Unit Statistics:'); b.appendChild(el('div', 'pv-small', 'Total Marsh Units: ' + st.count));
-      if (st.count && valid.length) { var w1 = el('div', 'pv-small', w.pos + ' (slope ≥ 0): ' + st.wetter); w1.style.color = w.posC; b.appendChild(w1); var w2 = el('div', 'pv-small', w.neg + ' (slope < 0): ' + st.drier); w2.style.color = w.negC; b.appendChild(w2); var ch = el('div'); b.appendChild(ch); panelHistogram(ch, valid, 'Marsh Unit ' + S.opts.index + ' Slope Distribution', 'Slope (' + S.opts.index + '/year)', [w.negC, w.posC]); }
+      var b = block('Marsh Unit Statistics:'); b.appendChild(el('div', 'pv-small', 'Total Marsh Units: ' + st.count + (valid.length ? ' | with slope: ' + valid.length : '')));
+      if (st.count && valid.length) { var ch = el('div'); b.appendChild(ch); panelHistogram(ch, valid, 'Marsh Unit ' + S.opts.index + ' Slope Distribution', 'Slope (' + S.opts.index + '/year)', [w.negC, w.posC], [w.neg + ' (slope < 0): ' + st.drier, w.pos + ' (slope \u2265 0): ' + st.wetter]); }
       else b.appendChild(el('div', 'pv-small', 'No marsh units found.'));
       renderTopUnits();
     });
@@ -274,19 +272,19 @@
   // the report document is rendered to a PDF in the browser (jsPDF + html2canvas); the HTML version stays available as a secondary link
   function deliver(html, filename, title) {
     MM.clearSide(); MM.titlePanel('Remote Sensing Portal'); var ok = add(el('div', '', 'Report Generated!')); ok.style.cssText = 'font-size:16px;font-weight:bold;color:green'; var d = add(el('div', 'pv-thin')); d.style.background = '#881c1c';
-    add(el('div', 'pv-h lg', 'To Download Report:')); var st = add(el('div', 'pv-small', 'Preparing the PDF (this takes a few seconds for long reports)...')); st.style.color = '#b45f06';
+    add(el('div', 'pv-h lg', 'Download Report')); var st = add(el('div', 'pv-small', 'Preparing the PDF (this takes a few seconds for long reports)...')); st.style.color = '#b45f06';
     var links = add(el('div')); var pdfName = filename.replace(/\.html?$/i, '') + '.pdf';
     thin(); add(el('div', 'pv-note', 'Map images and charts are embedded in the file; it can be saved and shared.'));
     thin('light'); MM.backButton(MM.showLanding);
-    function htmlLink(label) { var a = el('a', 'dl', label); a.href = URL.createObjectURL(new Blob([html], { type: 'text/html' })); a.download = filename; a.style.cssText = 'display:block;font-size:12px'; links.appendChild(a); }
-    if (typeof jspdf === 'undefined' || typeof html2canvas === 'undefined') { st.textContent = 'PDF conversion is not available on this page; the HTML report is below.'; htmlLink('\u2b07 Download ' + filename); return; }
+    function htmlLink(label) { var a = el('a', 'dl', label || '\u2b07 Download Report HTML'); a.href = URL.createObjectURL(new Blob([html], { type: 'text/html' })); a.download = filename; a.style.cssText = 'display:block'; links.appendChild(a); }
+    if (typeof jspdf === 'undefined' || typeof html2canvas === 'undefined') { st.textContent = 'PDF conversion is not available on this page; the HTML report is below.'; htmlLink(); return; }
     var holder = el('div'); holder.style.cssText = 'position:absolute;left:0;top:0;width:900px;background:#fff;color:#333;z-index:-1;opacity:1';   // on-screen behind the page: off-screen elements render blank in some browsers
     var body = html.replace(/^[\s\S]*?<body[^>]*>/i, '').replace(/<\/body>[\s\S]*$/i, ''); var css = (html.match(/<style>([\s\S]*?)<\/style>/i) || [])[1] || '';
     holder.innerHTML = '<style>' + css.replace(/body\s*\{[^}]*\}/, '') + '</style>' + body; document.body.appendChild(holder);
     rasterizeSvgs(holder).then(function () { return buildPdfPages(holder); }).then(function (doc) {
-      var url = URL.createObjectURL(doc.output('blob')); st.textContent = 'Click the link below (or right-click and choose "Save Link As").'; st.style.color = '';
-      var a = el('a', 'dl', '\u2b07 Download ' + pdfName); a.href = url; a.download = pdfName; a.style.display = 'block'; links.appendChild(a); htmlLink('HTML version: ' + filename);
-    }).catch(function (e) { st.textContent = 'PDF conversion failed (' + e.message + '); the HTML report is below.'; st.style.color = '#c00'; htmlLink('\u2b07 Download ' + filename); })
+      var url = URL.createObjectURL(doc.output('blob')); st.remove();
+      var a = el('a', 'dl', '\u2b07 Download Report PDF'); a.href = url; a.download = pdfName; a.style.display = 'block'; links.appendChild(a); htmlLink();
+    }).catch(function (e) { st.textContent = 'PDF conversion failed (' + e.message + '); the HTML report is below.'; st.style.color = '#c00'; htmlLink(); })
       .then(function () { if (holder.parentNode) holder.parentNode.removeChild(holder); });
   }
   // Page-aware PDF: the report is rendered block by block (html2canvas at 2x) and the blocks are laid out on letter pages so that no
@@ -382,7 +380,7 @@
       if (A.opts.pools && st.pools) { var ps = st.pools; h += '<h2>' + POOL_D.shortLabel + ' Pool Statistics (' + POOL_D.window + ')</h2><p style="font-size:11px;font-style:italic">' + esc(POOL_D.definition) + (fb ? ' ' + esc(fb) : '') + '</p><table class="stats-table"><tr><th>Metric</th><th>Value</th></tr><tr><td>Total Pools</td><td>' + ps.count + '</td></tr><tr><td>Pool Cover</td><td>' + fmtNum(ps.cover, 2) + '%</td></tr><tr><td>With stored slope</td><td>' + ps.withSlope + ' (No data: ' + ps.noData + ')</td></tr><tr><td style="color:' + POOL_D.posColor + '">Wetter (slope &gt; 0)</td><td>' + ps.wetter + ' (' + ps.wetterSig + ' significant, |t| &gt;= 2)</td></tr><tr><td style="color:' + POOL_D.negColor + '">Drier (slope &lt; 0)</td><td>' + ps.drier + ' (' + ps.drierSig + ' significant)</td></tr></table>';
         if (!ps.count) h += '<p style="font-size:11px;font-style:italic">No pools found in this marsh.</p>'; else if (!ps.withSlope) h += '<p style="font-size:11px;font-style:italic">' + ps.count + ' pools in selection; none has a Landsat MNDWI slope.</p>';
         if (ps.slopes.length) h += svgHistogram(ps.slopes, POOL_D.shortLabel + ' Pool Slope Distribution (' + POOL_D.window + ')', 400, 200, { negative: POOL_D.negColor, positive: POOL_D.posColor }, 'Slope (' + POOL_D.units + ')'); }
-      if (A.opts.ditches && st.ditches) { var ds = st.ditches; h += '<h2>Ditch Statistics</h2><table class="stats-table"><tr><th>Metric</th><th>Value</th></tr><tr><td>Total Ditches</td><td>' + ds.count + '</td></tr><tr><td>Total Ditch Length</td><td>' + fmtNum(ds.totalLength, 1) + ' m</td></tr><tr><td>Ditch Density</td><td>' + fmtNum(ds.density, 2) + ' m/ha</td></tr>' + (ds.unavailable ? '<tr><td colspan="2" style="font-style:italic">Ditch slope statistics are not available for Landsat ' + idx + '.</td></tr>' : '<tr><td class="positive">' + w.pos + ' (slope ≥ 0)</td><td>' + ds.wetter + '</td></tr><tr><td class="negative">' + w.neg + ' (slope &lt; 0)</td><td>' + ds.drier + '</td></tr>') + '</table>';
+      if (A.opts.ditches && st.ditches) { var ds = st.ditches; h += '<h2>Ditch Statistics</h2><table class="stats-table"><tr><th>Metric</th><th>Value</th></tr><tr><td>Total Ditches</td><td>' + ds.count + '</td></tr><tr><td>Total Ditch Length</td><td>' + fmtKm(ds.totalLength) + '</td></tr><tr><td>Ditch Density</td><td>' + fmtDensity(st.marshArea ? ds.totalLength / st.marshArea : null) + '</td></tr>' + (ds.unavailable ? '<tr><td colspan="2" style="font-style:italic">Ditch slope statistics are not available for Landsat ' + idx + '.</td></tr>' : '<tr><td class="positive">' + w.pos + ' (slope ≥ 0)</td><td>' + ds.wetter + '</td></tr><tr><td class="negative">' + w.neg + ' (slope &lt; 0)</td><td>' + ds.drier + '</td></tr>') + '</table>';
         if (!ds.unavailable) h += svgHistogram(ds.slopes, 'Ditch ' + idx + ' Slope Distribution', 400, 200, { negative: w.negC, positive: w.posC }, 'Slope (' + idx + '/year)'); }
       if (A.opts.marshUnits && st.units) { var us = st.units; h += '<h2>Marsh Unit Statistics</h2><table class="stats-table"><tr><th>Metric</th><th>Value</th></tr><tr><td>Total Marsh Units</td><td>' + us.count + '</td></tr><tr><td class="positive">' + w.pos + ' (slope ≥ 0)</td><td>' + us.wetter + '</td></tr><tr><td class="negative">' + w.neg + ' (slope &lt; 0)</td><td>' + us.drier + '</td></tr></table>' + svgHistogram(us.slopes, 'Marsh Unit ' + idx + ' Slope Distribution', 400, 200, { negative: w.negC, positive: w.posC }, 'Slope (' + idx + '/year)'); }
       h += '<h2>Site Maps</h2><div class="map-container"><h3>Site Boundary</h3>' + (thumbs.boundary ? '<img src="' + thumbs.boundary + '" alt="Site Boundary">' : '') + '<p style="font-size:10px;color:#666">Cyan outline on satellite imagery</p></div>';
@@ -418,7 +416,7 @@
     add(el('div', 'pv-h lg', 'Step 2: Select Satellite & Index'));
     add(el('div', 'pv-p', 'Satellite:')); add(MM.select([['Landsat (30m, 1984-Current)', 'Landsat'], ['Sentinel-2 (10m, 2015-Current)', 'Sentinel-2', true]], 'Landsat', '280px'));
     add(el('div', 'pv-p', 'Index:')); var idxSel = add(MM.select([['Water Index (MNDWI)', 'MNDWI'], ['Vegetation Index (NDVI)', 'NDVI']], 'MNDWI', '280px'));   // Landsat only: no NDWI
-    var av = add(el('div', 'pv-note')); av.style.cssText = 'color:#666;font-style:italic;width:280px'; function refresh() { S.opts.index = idxSel.value; av.textContent = availabilityText(); } idxSel.addEventListener('change', refresh); refresh();
+    var av = null; function refresh() { S.opts.index = idxSel.value; } idxSel.addEventListener('change', refresh); refresh();
     var ap = add(button('Apply', function () { S.step = 3; showSiteSelection(); })); ap.style.width = '200px';
     thin('light'); MM.backButton(function () { MM.startTool('restoration_report'); });
   }
