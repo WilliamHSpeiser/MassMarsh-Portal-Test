@@ -1,0 +1,37 @@
+{
+ "generated": "2026-10-20 14:01 UTC",
+ "pool_id": "pool_idx (flagship inventory row id)",
+ "state": "geographic state (TIGER 2023), PoolPaper state fix 2026-10-20",
+ "n_pools": 205760,
+ "n_pools_by_state": {
+  "MD": 71135,
+  "NJ": 56566,
+  "VA": 28185,
+  "MA": 18256,
+  "DE": 13602,
+  "NY": 7588,
+  "ME": 5550,
+  "NH": 2774,
+  "CT": 1543,
+  "RI": 561
+ },
+ "n_complexes": 461,
+ "series_tags": [
+  "MA",
+  "NH",
+  "RI",
+  "CT",
+  "ME",
+  "NY"
+ ],
+ "shard_size": 100,
+ "day_epoch": "1984-01-01",
+ "pools_source": "ne_flagship_2of3_8state_bldgfiltered.gpkg",
+ "state_source": "pool_state_geo_2026-10-20.csv",
+ "tidal_source": "pool_tidal_datums_geo.csv",
+ "slopes_source": "pools_landsat_summer_slope_1985_2026_20260923.gpkg",
+ "obs_source": "mndwi_observations_{st}_flagship.parquet",
+ "s2_obs_source": "mndwi_observations_S2_{st}_flagship_strict.parquet",
+ "complexes_source": "Final_MA_Complexes.shp",
+ "notes": "Every flagship pool of the ten states, identified by pool_idx and labelled with its geographic state (the September slope dataset state tags are used only to join its slopes and the observation caches). Landsat series are pool-mean MNDWI per scene from the local Landsat stacks, 1985 on, all seasons; the viewer keeps June-August for the summer mode. Summer slopes (sl, t, sig, n) come from the slope dataset; all-year slopes (sly, ty, sigy, ny) are OLS fits over every scene computed by this script for the processed caches. Sentinel-2 (series_s2/, s2* properties): pool-mean MNDWI per scene from the local Sentinel-2 stacks (strict SCL + s2cloudless masking), 2015 on, with the same-scene median MNDWI of the surrounding marsh subtracted for the marsh-referenced value; s2 slopes are OLS fits of the marsh-referenced MNDWI (summer / all scenes, >= 14 scenes). tide = mean tidal range (MN) of the geographic unit datums; tsrc = datum source."
+}

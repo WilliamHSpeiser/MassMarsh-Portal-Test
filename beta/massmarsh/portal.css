@@ -1,0 +1,29 @@
+/* MassMarsh Viewer portal: compare (swipe) layout for the Historical Imagery Viewer, checkbox grids, report output */
+.hi-compare { position: relative; flex: 1 1 auto; display: none; height: calc(100vh - 56px); min-height: 480px; }
+.hi-compare.on { display: block; }
+.pv-layout.compare .pv-side { display: none; }
+.pv-layout.compare .pv-map { display: none; }
+#map2 { position: absolute; inset: 0; background: #e2e8f0; }
+.hi-divider { position: absolute; top: 0; bottom: 0; width: 4px; margin-left: -2px; background: #fff; box-shadow: 0 0 4px rgba(0,0,0,.6); cursor: ew-resize; z-index: 650; }
+.hi-divider::after { content: '\2039\203A'; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 34px; height: 34px; border-radius: 50%; background: #fff; color: #333; font: bold 20px/34px Roboto, sans-serif; text-align: center; letter-spacing: -2px; box-shadow: 0 1px 4px rgba(0,0,0,.4); }
+.hi-panel { position: absolute; top: 10px; z-index: 700; background: rgba(255,255,255,0.9); border-radius: 4px; padding: 8px 10px; font: 12px Roboto, Arial, sans-serif; box-shadow: 0 1px 4px rgba(0,0,0,.2); max-width: 300px; }
+.hi-panel.left { left: 54px; }
+.hi-panel.right { right: 10px; }
+.hi-panel select { font: bold 12px Roboto, sans-serif; width: 240px; padding: 4px 6px; border: 1px solid #ccc; border-radius: 3px; background: #fff; }
+.hi-panel .t { font-size: 14px; font-weight: bold; color: #881c1c; margin-bottom: 4px; }
+.hi-panel .n { font-size: 11px; color: #555; margin: 4px 0; }
+.hi-panel button { font: bold 12px Roboto, sans-serif; padding: 5px 12px; margin-top: 6px; background: #f5f5f5; border: 1px solid #d0d0d0; border-radius: 3px; cursor: pointer; }
+.hi-cap { position: absolute; bottom: 24px; z-index: 700; background: rgba(255,255,255,0.85); padding: 3px 8px; font: 12px Roboto, sans-serif; border-radius: 3px; }
+.hi-cap.left { left: 10px; } .hi-cap.right { right: 10px; }
+.pv-grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px 6px; font-size: 11px; margin: 4px 0; }
+.pv-check { display: flex; align-items: center; gap: 4px; font-size: 11px; margin: 2px 0; }
+.pv-check input { margin: 0; }
+.pv-swatches { display: flex; margin: 4px 0 2px 0; }
+.pv-swatches span { width: 20px; height: 15px; border: 1px solid #999; border-right: none; }
+.pv-swatches span:last-child { border-right: 1px solid #999; }
+.pv-swatch-labels { display: flex; justify-content: space-between; font-size: 10px; width: 180px; }
+.pv-side a.dl { color: #1a73e8; font-weight: bold; font-size: 12px; }
+.pv-progress { font-size: 11px; color: #DAA520; font-style: italic; }
+.pv-side .pv-layer-row { display: flex; align-items: center; gap: 6px; font-size: 11px; margin: 2px 0; }
+.pv-side .pv-layer-row input[type=range] { width: 120px; }
+.pv-side .pv-tight { margin: 2px 0; }

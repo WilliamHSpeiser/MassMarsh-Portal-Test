@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MassMarsh Pool Viewer (beta)</title>
+  <meta name="description" content="MassMarsh Pool Viewer (beta): Landsat and Sentinel-2 MNDWI time series and trends for salt marsh pools, served from the MassMarsh servers.">
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,400;0,700;1,400;1,700&display=swap">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="pool-viewer.css">
+  <link rel="stylesheet" href="massmarsh/portal.css">
+  <style>
+    .mm-header { background: #fff; border-bottom: 1px solid #e2e8f0; height: 56px; position: sticky; top: 0; z-index: 1200; }
+    .mm-header-inner { height: 56px; display: flex; align-items: center; justify-content: space-between; padding: 0 14px; gap: 12px; }
+    .mm-banner img { height: 44px; width: auto; display: block; }
+    .mm-header-right { display: flex; align-items: center; gap: 14px; font-size: 13px; color: #334155; white-space: nowrap; }
+    .mm-header-right a { color: #334155; text-decoration: none; } .mm-header-right a:hover { color: #881c1c; text-decoration: underline; }
+    .mm-beta { background: #881c1c; color: #fff; border-radius: 4px; padding: 2px 8px; font-weight: 600; letter-spacing: 0.04em; font-size: 12px; }
+    @media (max-width: 700px) { .mm-banner img { height: 32px; } .mm-header-right { font-size: 12px; gap: 8px; } }
+  </style>
+</head>
+<body>
+
+  <header class="site-header mm-header" id="site-header">
+    <div class="mm-header-inner">
+      <a href="https://www.massmarshviewer.com/" class="mm-banner" title="MassMarsh Remote Sensing Portal"><img src="assets/TimeSeriesBanner.png" alt="University of Massachusetts Amherst, Massachusetts Geological Survey, MassMarsh, MassDEP"></a>
+      <div class="mm-header-right"><a href="./">MassMarsh Viewer</a><a href="https://www.massmarshviewer.com/">Current portal</a><span class="mm-beta">beta</span></div>
+    </div>
+  </header>
+
+  <div class="pv-layout">
+    <aside id="pv-side" class="pv-side"></aside>
+    <div id="map" class="pv-map"></div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/proj4@2.11.0/dist/proj4.js"></script>
+  <script>window.MM_DATA_BASE = 'data/';</script>
+  <script src="massmarsh/core.js?v=20261020e"></script>
+  <script src="massmarsh/tool-pool.js?v=20261020e"></script>
+  <script>MM.boot({ only: 'pool_viewer' });</script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+{
+ "generated": "2026-10-20 14:04 UTC",
+ "units": 6580,
+ "units_with_slopes": 5823,
+ "sources": {
+  "units": "CMU_MA_with_COMPLEX.shp",
+  "slopes": "CMU_MA_with_slopes_polygons.gpkg",
+  "bboxes": "Final_MA_Complexes_bounding_boxes.shp"
+ },
+ "unit_simplify_m": 5,
+ "coordinate_decimals": 5
+}

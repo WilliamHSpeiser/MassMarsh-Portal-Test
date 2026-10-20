@@ -1,0 +1,191 @@
+{
+ "Landsat_MNDWI": {
+  "key": "Landsat_MNDWI",
+  "asset": "projects/massmarsh/assets/Landsat_MNDWI_slope_QA",
+  "file": "Landsat_MNDWI.tif",
+  "bands": [
+   "slope",
+   "obs_count"
+  ],
+  "width": 4812,
+  "height": 6048,
+  "transform": [
+   0.00026949458523585647,
+   0,
+   -71.22661039408116,
+   0,
+   -0.00026949458523585647,
+   42.87200710307575
+  ],
+  "crs": "EPSG:4326",
+  "bounds": [
+   -71.22661039408116,
+   41.24210385156929,
+   -69.92980244992623,
+   42.87200710307575
+  ],
+  "valid_pixels": 402217,
+  "size_mb": 4.4,
+  "p2": -0.004400923848152161,
+  "p98": 0.007051879931241271,
+  "exported": "2026-10-19 21:57 UTC"
+ },
+ "Landsat_NDWI": {
+  "key": "Landsat_NDWI",
+  "asset": "projects/massmarsh/assets/Landsat_NDWI_slope_QA",
+  "file": "Landsat_NDWI.tif",
+  "bands": [
+   "slope",
+   "obs_count"
+  ],
+  "width": 4812,
+  "height": 6048,
+  "transform": [
+   0.00026949458523585647,
+   0,
+   -71.22661039408116,
+   0,
+   -0.00026949458523585647,
+   42.87200710307575
+  ],
+  "crs": "EPSG:4326",
+  "bounds": [
+   -71.22661039408116,
+   41.24210385156929,
+   -69.92980244992623,
+   42.87200710307575
+  ],
+  "valid_pixels": 402217,
+  "size_mb": 4.4,
+  "p2": -0.0044887493923306465,
+  "p98": 0.007108208294957874,
+  "exported": "2026-10-19 21:59 UTC"
+ },
+ "Landsat_NDVI": {
+  "key": "Landsat_NDVI",
+  "asset": "projects/massmarsh/assets/Landsat_NDVI_slope_QA",
+  "file": "Landsat_NDVI.tif",
+  "bands": [
+   "slope",
+   "obs_count"
+  ],
+  "width": 4812,
+  "height": 6048,
+  "transform": [
+   0.00026949458523585647,
+   0,
+   -71.22661039408116,
+   0,
+   -0.00026949458523585647,
+   42.87200710307575
+  ],
+  "crs": "EPSG:4326",
+  "bounds": [
+   -71.22661039408116,
+   41.24210385156929,
+   -69.92980244992623,
+   42.87200710307575
+  ],
+  "valid_pixels": 402217,
+  "size_mb": 4.4,
+  "p2": -0.006429043412208557,
+  "p98": 0.0047616190277040005,
+  "exported": "2026-10-19 22:01 UTC"
+ },
+ "Sentinel-2_MNDWI": {
+  "key": "Sentinel-2_MNDWI",
+  "asset": "projects/massmarsh/assets/Sentinel2_MNDWI_slope_QA",
+  "file": "Sentinel-2_MNDWI.tif",
+  "bands": [
+   "slope",
+   "obs_count"
+  ],
+  "width": 14435,
+  "height": 18143,
+  "transform": [
+   8.983152841195215e-05,
+   0,
+   -71.22652056255274,
+   0,
+   -8.983152841195215e-05,
+   42.87200710307575
+  ],
+  "crs": "EPSG:4326",
+  "bounds": [
+   -71.22652056255274,
+   41.2421936830977,
+   -69.9298024499262,
+   42.87200710307575
+  ],
+  "valid_pixels": 3040097,
+  "size_mb": 31.1,
+  "p2": -0.015162655152380466,
+  "p98": 0.020055594667792328,
+  "exported": "2026-10-20 13:21 UTC",
+  "server": "rasters/Sentinel-2_MNDWI.tif"
+ },
+ "Sentinel-2_NDWI": {
+  "key": "Sentinel-2_NDWI",
+  "asset": "projects/massmarsh/assets/Sentinel2_NDWI_slope_QA",
+  "file": "Sentinel-2_NDWI.tif",
+  "bands": [
+   "slope",
+   "obs_count"
+  ],
+  "width": 14435,
+  "height": 18143,
+  "transform": [
+   8.983152841195215e-05,
+   0,
+   -71.22652056255274,
+   0,
+   -8.983152841195215e-05,
+   42.87200710307575
+  ],
+  "crs": "EPSG:4326",
+  "bounds": [
+   -71.22652056255274,
+   41.2421936830977,
+   -69.9298024499262,
+   42.87200710307575
+  ],
+  "valid_pixels": 3040097,
+  "size_mb": 31.4,
+  "p2": -0.011172455176711083,
+  "p98": 0.025730973109602928,
+  "exported": "2026-10-20 13:43 UTC",
+  "server": "rasters/Sentinel-2_NDWI.tif"
+ },
+ "Sentinel-2_NDVI": {
+  "key": "Sentinel-2_NDVI",
+  "asset": "projects/massmarsh/assets/Sentinel2_NDVI_slope_QA",
+  "file": "Sentinel-2_NDVI.tif",
+  "bands": [
+   "slope",
+   "obs_count"
+  ],
+  "width": 14435,
+  "height": 18143,
+  "transform": [
+   8.983152841195215e-05,
+   0,
+   -71.22652056255274,
+   0,
+   -8.983152841195215e-05,
+   42.87200710307575
+  ],
+  "crs": "EPSG:4326",
+  "bounds": [
+   -71.22652056255274,
+   41.2421936830977,
+   -69.9298024499262,
+   42.87200710307575
+  ],
+  "valid_pixels": 3040097,
+  "size_mb": 31.4,
+  "p2": -0.022478608712553978,
+  "p98": 0.011215629093348983,
+  "exported": "2026-10-20 14:04 UTC",
+  "server": "rasters/Sentinel-2_NDVI.tif"
+ }
+}
