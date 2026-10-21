@@ -146,7 +146,7 @@
     aui = {}; clearReportLayers(); MM.clearSide(); MM.titlePanel(A.comprehensive ? 'Comprehensive Report' : 'Assessment Report');
     add(el('div', 'pv-h lg', 'Select Satellite and Index:'));
     var av = null;                                             // (availability note removed)
-    add(el('div', 'pv-p', 'Satellite:')); add(MM.select([['Landsat (30m, 1984-Current)', 'Landsat'], ['Sentinel-2 (10m, 2015-Current)', 'Sentinel-2', true]], 'Landsat', '280px'));
+    add(el('div', 'pv-p', 'Satellite:')); add(MM.select([['Landsat (30m, 1984-Current)', 'Landsat'], ['Sentinel-2 (20m, 2015-Current)', 'Sentinel-2', true]], 'Landsat', '280px'));
     add(el('div', 'pv-p', 'Index:')); var idxSel = add(MM.select([['Water Index (MNDWI)', 'MNDWI'], ['Vegetation Index (NDVI)', 'NDVI']], S.opts.index === 'NDVI' ? 'NDVI' : 'MNDWI', '280px'));   // reports are Landsat only: no NDWI
     function refresh() { S.opts.index = idxSel.value; if (av) { av.textContent = availabilityText(); Promise.all([MM.load('pools'), MM.selectionPools()]).then(function (r) { var n = r[1].filter(function (g) { var f = r[0].byPid[g]; return f && f.properties.sl !== null && f.properties.sl !== undefined; }).length; av.textContent = availabilityText() + ' ' + n + ' pool' + (n === 1 ? ' in this selection has' : 's in this selection have') + ' a Landsat MNDWI slope; the report will highlight at most ' + n + '.'; }); } }
     idxSel.addEventListener('change', refresh); refresh();
@@ -427,7 +427,7 @@
   function showRestorationSatellite() {
     rui = {}; MM.clearToolLayers(); MM.stopDraw(); MM.setClickHandler(null); clearSites(); MM.clearSide(); MM.titlePanel('Restoration Efficacy Report'); S.step = 2;
     add(el('div', 'pv-h lg', 'Step 2: Select Satellite & Index'));
-    add(el('div', 'pv-p', 'Satellite:')); add(MM.select([['Landsat (30m, 1984-Current)', 'Landsat'], ['Sentinel-2 (10m, 2015-Current)', 'Sentinel-2', true]], 'Landsat', '280px'));
+    add(el('div', 'pv-p', 'Satellite:')); add(MM.select([['Landsat (30m, 1984-Current)', 'Landsat'], ['Sentinel-2 (20m, 2015-Current)', 'Sentinel-2', true]], 'Landsat', '280px'));
     add(el('div', 'pv-p', 'Index:')); var idxSel = add(MM.select([['Water Index (MNDWI)', 'MNDWI'], ['Vegetation Index (NDVI)', 'NDVI']], 'MNDWI', '280px'));   // Landsat only: no NDWI
     var av = null; function refresh() { S.opts.index = idxSel.value; } idxSel.addEventListener('change', refresh); refresh();
     var ap = add(button('Apply', function () { S.step = 3; showSiteSelection(); })); ap.style.width = '200px';
@@ -436,7 +436,7 @@
   function showSiteSelection() {
     rui = {}; clearSites(); MM.clearToolLayers(); MM.stopDraw(); MM.setClickHandler(null); MM.clearSide(); MM.titlePanel('Restoration Efficacy Report');
     add(el('div', 'pv-h lg', 'Step 3: Site Selection Method')); add(el('div', 'pv-small', 'Select how you want to define restoration sites:'));
-    var sel = add(MM.select(['Draw Points', 'Draw Polygons', 'GeoJSON Upload', 'Shapefile Upload', 'Paste GeoJSON', 'Input Coordinates', 'Select Pools', 'Select Ditches', 'Select Pools and Ditches'], 'Draw Points', '200px'));
+    var sel = add(MM.select(['Draw Points', 'Draw Polygons', ['GeoJSON / GeoPackage Upload', 'GeoJSON Upload'], 'Shapefile Upload', 'Paste GeoJSON', 'Input Coordinates', 'Select Pools', 'Select Ditches', 'Select Pools and Ditches'], 'Draw Points', '200px'));
     rui.method = add(el('div')); rui.sites = add(el('div')); thin();
     var gen = add(button('Generate Report', function () { if (!Rz.sites.length) { rui.sites.innerHTML = ''; var e = el('div', 'pv-err', 'Please add at least one restoration site.'); e.style.cssText = 'font-size:12px;font-weight:bold;color:#c00'; rui.sites.appendChild(e); return; } generateRestorationReport(); })); gen.style.width = '100%';
     thin('light'); add(button('← Back', function () { MM.stopDraw(); MM.setClickHandler(null); MM.clearToolLayers(); showRestorationSatellite(); }, 'pv-back'));
@@ -535,15 +535,18 @@
   // Site upload: GeoJSON or shapefile features become sites (shared window in core: coordinate conversion, name and date columns)
   function uploadMethodUI(m) {
     var c = rui.method; var shp = m === 'Shapefile Upload';
-    c.appendChild(el('div', 'pv-small', shp ? 'Upload a shapefile of your restoration sites (a .zip, or the .shp, .shx, .dbf and .prj files together).' : 'Upload a GeoJSON file of your restoration sites.'));
+    c.appendChild(el('div', 'pv-small', shp ? 'Upload a shapefile of your restoration sites (a .zip, or the .shp, .shx, .dbf and .prj files together).' : 'Upload a GeoJSON or GeoPackage file of your restoration sites.'));
     c.appendChild(el('div', 'pv-grey', 'Every point, line and polygon in the file becomes a site, just like drawing it. A name column (name, site, id, ...) and a date column (date, start, restored, year, ...) are used when present. Nothing is uploaded anywhere: the file stays in your browser and is forgotten when you leave the page.'));
-    var ob = button(shp ? 'Open shapefile window' : 'Open GeoJSON window', function () { openUpload(m); }); ob.style.width = '200px'; c.appendChild(ob);
+    var ob = button(shp ? 'Open shapefile window' : 'Open GeoJSON / GeoPackage window', function () { openUpload(m); }); ob.style.width = '200px'; c.appendChild(ob);
     var cl = button('Clear uploaded sites', function () { removeByMethod(m); }); cl.style.width = '200px'; c.appendChild(cl);
     openUpload(m);
   }
   function openUpload(m) {
-    MM.uploadDialog({ kind: m === 'Shapefile Upload' ? 'shapefile' : 'geojson', title: m, addLabel: 'Add sites to the report', max: 25, onSites: function (sites) {
-      removeByMethod(m); var added = sites.map(function (s) { return addSite(s.geometry, s.type, nextColor(), s.date, s.name, m); });
+    MM.uploadDialog({ kind: m === 'Shapefile Upload' ? 'shapefile' : 'geojson', title: m, addLabel: 'Add sites to the report', onSites: function (sites) {
+      removeByMethod(m);
+      var inside = S.selection ? sites.filter(function (s) { return MM.inSelectedArea(s.geometry); }) : sites;      // sites in the selected area first; 25 at most (the report's colours)
+      var use = (inside.length ? inside : sites).slice(0, 25); var added = use.map(function (s) { return addSite(s.geometry, s.type, nextColor(), s.date, s.name, m); });
+      if (sites.length > use.length) { var note = el('div', 'pv-note', use.length + ' of ' + sites.length + ' features added' + (inside.length ? ' (those inside the selected area' + (inside.length > 25 ? ', first 25' : '') + ')' : ' (first 25)') + '.'); note.style.color = '#b45f06'; rui.method.appendChild(note); }
       MM.fitToGeometries(added.map(function (s) { return s.geometry; }), 15);
     } });
   }

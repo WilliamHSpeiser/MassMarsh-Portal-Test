@@ -18,17 +18,13 @@
   function label(f) { return f.name || (kindWord(f) + ' ' + f.id); }
   function inSel(lon, lat) { return MM.inSelection(lon, lat); }
   function selectionClip() { var s = S.selection; if (!s) return null; var polys = s.clip || s.marshPolys || s.polys; return polys && polys.length ? polys : null; }
-  function keepFeature(f) {                                 // inside the selected area: any vertex, or the centre, inside
-    var pts = []; (function walk(c) { if (typeof c[0] === 'number') pts.push(c); else c.forEach(walk); })(f.geometry.coordinates);
-    if (pts.some(function (c) { return inSel(c[0], c[1]); })) return true;
-    var b = MM.featureBbox({ geometry: f.geometry }); return inSel((b[0] + b[2]) / 2, (b[1] + b[3]) / 2);
-  }
+  function keepFeature(f) { return MM.inSelectedArea(f.geometry); }   // inside the selected area (centre or vertices)
 
   // ---------- Step 2: add a file ----------
   function showAddFile() {
     clearTool(); MM.clearSide(); MM.titlePanel('Data Viewer', 'beta'); MM.addSwitcher('data_viewer'); S.activeTool = 'data_viewer'; V.coloured = false;
     add(el('div', 'pv-step', 'Step 2: Add Your File'));
-    add(el('div', 'pv-small', 'Add a GeoJSON file or a shapefile of your own features (points, lines or polygons).'));
+    add(el('div', 'pv-small', 'Add a GeoJSON file, a GeoPackage or a shapefile of your own features (points, lines or polygons).'));
     var sp = add(el('div')); sp.style.height = '8px';
     add(el('div', 'pv-small', 'Features outside the selected area are cropped. If no features are within your selected area, you will not move past this step.'));
     var sp2 = add(el('div')); sp2.style.height = '8px';
@@ -45,7 +41,8 @@
     if (!ui.fileStatus) return; ui.fileStatus.innerHTML = '';
     if (!V.feats.length) { ui.fileStatus.appendChild(el('div', 'pv-grey', V.dropped ? 'All ' + V.dropped + ' features fell outside the selected area.' : 'No file added yet.')); if (ui.next) ui.next.style.display = 'none'; return; }
     var n = { Point: 0, LineString: 0, Polygon: 0 }; V.feats.forEach(function (f) { n[f.type]++; });
-    ui.fileStatus.appendChild(el('div', 'pv-ok', V.feats.length + ' features in the selected area: ' + n.Polygon + ' polygons, ' + n.LineString + ' lines, ' + n.Point + ' points' + (V.dropped ? ' (' + V.dropped + ' outside the area dropped)' : '')));
+    ui.fileStatus.appendChild(el('div', 'pv-ok', V.feats.length + ' features in the selected area: ' + n.Polygon + ' polygons, ' + n.LineString + ' lines, ' + n.Point + ' points' + (V.dropped ? ' (' + V.dropped + ' outside the area cropped)' : '')));
+    if (V.capped) ui.fileStatus.appendChild(el('div', 'pv-warn', 'Only the first ' + MAX_FEATS + ' features inside the area are used; ' + V.capped + ' more were left out. Select a smaller area for the rest.'));
     var named = V.feats.filter(function (f) { return f.name; }).length, dated = V.feats.filter(function (f) { return f.date; }).length;
     ui.fileStatus.appendChild(el('div', 'pv-note', 'Names found for ' + named + ', dates for ' + dated + '.'));
     if (ui.next) ui.next.style.display = '';
@@ -63,9 +60,9 @@
     });
   }
   function openUpload() {
-    MM.uploadDialog({ kind: 'any', title: 'Add File', addLabel: 'Upload', max: MAX_FEATS, onSites: function (sites) {
-      clearFeatures();
-      sites.forEach(function (s) { if (!keepFeature(s)) { V.dropped++; return; } V.feats.push({ id: V.nextId++, geometry: s.geometry, type: s.type, name: null, date: '', props: s.props || {}, slope: null, pts: null, nImages: 0 }); });
+    MM.uploadDialog({ kind: 'any', title: 'Add File', addLabel: 'Upload', onSites: function (sites) {
+      clearFeatures(); V.capped = 0;
+      sites.forEach(function (s) { if (!keepFeature(s)) { V.dropped++; return; } if (V.feats.length >= MAX_FEATS) { V.capped++; return; } V.feats.push({ id: V.nextId++, geometry: s.geometry, type: s.type, name: null, date: '', props: s.props || {}, slope: null, pts: null, nImages: 0 }); });
       detectColumns(); applyColumns();
       renderFileStatus(); drawFeatures(null); if (V.feats.length) MM.fitToGeometries(V.feats.map(function (f) { return f.geometry; }), 15);
     } });

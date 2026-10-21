@@ -1353,23 +1353,90 @@ window.MM = (function () {
       }));
     });
   }
+  // GeoPackages: SQLite read in the browser (sql.js, fetched on first use); every feature table is returned as a FeatureCollection
+  // in its own coordinates plus the EPSG code / WKT of its spatial reference, so the window can convert it like a GeoJSON file.
+  var SQLJS_URL = 'https://cdn.jsdelivr.net/npm/sql.js@1.11.0/dist/sql-wasm.js', SQLJS_WASM = 'https://cdn.jsdelivr.net/npm/sql.js@1.11.0/dist/sql-wasm.wasm';
+  function loadSqlJs() {
+    if (window.__sqljs) return Promise.resolve(window.__sqljs);
+    return new Promise(function (res, rej) {
+      function init() { window.initSqlJs({ locateFile: function () { return SQLJS_WASM; } }).then(function (SQL) { window.__sqljs = SQL; res(SQL); }).catch(rej); }
+      if (window.initSqlJs) return init();
+      var sc = document.createElement('script'); sc.src = SQLJS_URL; sc.onload = init; sc.onerror = function () { rej(new Error('could not load the GeoPackage reader')); }; document.head.appendChild(sc);
+    });
+  }
+  function parseWkb(dv, off) {                                 // standard WKB (and EWKB flags) -> GeoJSON geometry; Z / M values are dropped
+    var little = dv.getUint8(off) === 1; off += 1; var type = dv.getUint32(off, little); off += 4;
+    var hasZ = false, hasM = false;
+    if (type & 0x80000000) { hasZ = true; type &= 0x7fffffff; } if (type & 0x40000000) { hasM = true; type &= 0xbfffffff; } if (type & 0x20000000) { type &= 0xdfffffff; off += 4; }
+    if (type >= 3000) { hasZ = hasM = true; type -= 3000; } else if (type >= 2000) { hasM = true; type -= 2000; } else if (type >= 1000) { hasZ = true; type -= 1000; }
+    var dims = 2 + (hasZ ? 1 : 0) + (hasM ? 1 : 0);
+    function pt() { var x = dv.getFloat64(off, little), y = dv.getFloat64(off + 8, little); off += 8 * dims; return [x, y]; }
+    function ring() { var n = dv.getUint32(off, little); off += 4; var r = []; for (var i = 0; i < n; i++) r.push(pt()); return r; }
+    function sub() { var r = parseWkb(dv, off); off = r.off; return r.geom; }
+    var n, i, g;
+    if (type === 1) g = { type: 'Point', coordinates: pt() };
+    else if (type === 2) g = { type: 'LineString', coordinates: ring() };
+    else if (type === 3) { n = dv.getUint32(off, little); off += 4; var rings = []; for (i = 0; i < n; i++) rings.push(ring()); g = { type: 'Polygon', coordinates: rings }; }
+    else if (type >= 4 && type <= 7) {
+      n = dv.getUint32(off, little); off += 4; var parts = []; for (i = 0; i < n; i++) parts.push(sub());
+      if (type === 7) g = { type: 'GeometryCollection', geometries: parts };
+      else g = { type: ['MultiPoint', 'MultiLineString', 'MultiPolygon'][type - 4], coordinates: parts.map(function (q) { return q.coordinates; }) };
+    } else throw new Error('unsupported WKB geometry type ' + type);
+    return { geom: g, off: off };
+  }
+  function parseGpkgGeometry(blob) {                           // GeoPackage binary header ('GP', version, flags, srs_id, envelope) then WKB
+    if (!blob || blob.length < 8 || blob[0] !== 0x47 || blob[1] !== 0x50) return null;
+    var flags = blob[3]; if (flags & 0x10) return null;        // empty geometry
+    var env = (flags >> 1) & 7; var envLen = [0, 32, 48, 48, 64][env] || 0; var off = 8 + envLen;
+    var dv = new DataView(blob.buffer, blob.byteOffset, blob.byteLength);
+    return parseWkb(dv, off).geom;
+  }
+  function crsFromSrs(srs) {                                   // EPSG code usable by proj4, registering the file's WKT definition when needed
+    if (!srs) return null; var code = /^EPSG$/i.test(srs.organization || '') && srs.organization_coordsys_id > 0 ? 'EPSG:' + srs.organization_coordsys_id : (srs.srs_id > 0 ? 'EPSG:' + srs.srs_id : null);
+    if (!code) return null;
+    if (!proj4.defs(code) && srs.definition && /^(PROJCS|GEOGCS|PROJCRS|GEOGCRS)/i.test(String(srs.definition).trim())) { try { proj4.defs(code, srs.definition); } catch (e) {} }
+    try { if (proj4.defs(code)) { proj4(code, 'EPSG:4326', [0, 0]); return code; } } catch (e) {}
+    return null;
+  }
+  function readGeoPackage(file) {                              // -> [{ name, fc (native coordinates), crs: 'EPSG:n' | null }]
+    return Promise.all([loadSqlJs(), file.arrayBuffer()]).then(function (r) {
+      var SQL = r[0], db = new SQL.Database(new Uint8Array(r[1])); var out = [];
+      try {
+        var srsRows = {}; try { var s = db.exec('SELECT srs_id, organization, organization_coordsys_id, definition FROM gpkg_spatial_ref_sys'); (s[0] ? s[0].values : []).forEach(function (v) { srsRows[v[0]] = { srs_id: v[0], organization: v[1], organization_coordsys_id: v[2], definition: v[3] }; }); } catch (e) {}
+        var t = db.exec("SELECT c.table_name, g.column_name, g.srs_id FROM gpkg_contents c JOIN gpkg_geometry_columns g ON c.table_name = g.table_name WHERE c.data_type = 'features'");
+        var tables = t[0] ? t[0].values : [];
+        if (!tables.length) throw new Error('no feature layers found in the GeoPackage');
+        tables.forEach(function (row) {
+          var table = row[0], gcol = row[1], srsId = row[2]; var feats = []; var st = db.prepare('SELECT * FROM "' + table.replace(/"/g, '""') + '"');
+          while (st.step()) {
+            var obj = st.getAsObject(); var blob = obj[gcol]; var geom = null; try { geom = blob ? parseGpkgGeometry(blob) : null; } catch (e) { geom = null; }
+            if (!geom) continue; var props = {}; Object.keys(obj).forEach(function (k) { if (k !== gcol && !(obj[k] instanceof Uint8Array)) props[k] = obj[k]; });
+            feats.push({ type: 'Feature', geometry: geom, properties: props });
+          }
+          st.free(); out.push({ name: table, fc: { type: 'FeatureCollection', features: feats }, crs: crsFromSrs(srsRows[srsId]), srsId: srsId });
+        });
+      } finally { db.close(); }
+      return out;
+    });
+  }
+  function isGeoPackage(files) { return Array.prototype.slice.call(files).some(function (f) { return /\.gpkg$/i.test(f.name); }); }
   function isShapefileSet(files) { return Array.prototype.slice.call(files).some(function (f) { return /\.(zip|shp|shx|dbf|prj|cpg)$/i.test(f.name); }); }
   // o: { kind: 'geojson' | 'shapefile' | 'any', title, addLabel, max (default 25), onSites(sites) }
   function uploadDialog(o) {
-    o = o || {}; var kind = o.kind || 'any'; var max = o.max || 25;
+    o = o || {}; var kind = o.kind || 'any';                         // every feature is handed to the tool, which crops to the selected area and applies its own limit
     var ov = el('div', 'pv-overlay'); var box = el('div', 'pv-dialog'); box.style.width = 'min(520px, 92vw)'; ov.appendChild(box);
     var x = el('button', 'pv-dialog-x', '×'); x.setAttribute('aria-label', 'Close'); box.appendChild(x);
     box.appendChild(el('div', 'pv-dialog-h', o.title || (kind === 'shapefile' ? 'Shapefile Upload' : kind === 'geojson' ? 'GeoJSON Upload' : 'Add a spatial file')));
-    box.appendChild(el('div', 'pv-small', kind === 'shapefile' ? 'Drop a .zip of the shapefile here, or the .shp, .shx, .dbf and .prj files together.' : kind === 'geojson' ? 'Drop a .geojson or .json file here.' : 'Drop a GeoJSON file (.geojson / .json) or a shapefile (a .zip, or the .shp, .shx, .dbf and .prj files together) here.'));
-    var zone = el('div', '', kind === 'shapefile' ? 'Drag the shapefile here' : kind === 'geojson' ? 'Drag the GeoJSON file here' : 'Drag the file here'); zone.style.cssText = 'margin:12px 0 8px;padding:34px 10px;border:2px dashed #b0bec5;border-radius:10px;background:#f7f9fb;text-align:center;color:#607d8b;font-size:14px;cursor:pointer';
+    box.appendChild(el('div', 'pv-small', kind === 'shapefile' ? 'Drop a .zip of the shapefile here, or the .shp, .shx, .dbf and .prj files together (a GeoPackage .gpkg works here too).' : kind === 'geojson' ? 'Drop a .geojson, .json or .gpkg (GeoPackage) file here.' : 'Drop a GeoJSON file (.geojson / .json), a GeoPackage (.gpkg) or a shapefile (a .zip, or the .shp, .shx, .dbf and .prj files together) here.'));
+    var zone = el('div', '', kind === 'shapefile' ? 'Drag the shapefile here' : kind === 'geojson' ? 'Drag the GeoJSON or GeoPackage file here' : 'Drag the file here'); zone.style.cssText = 'margin:12px 0 8px;padding:34px 10px;border:2px dashed #b0bec5;border-radius:10px;background:#f7f9fb;text-align:center;color:#607d8b;font-size:14px;cursor:pointer';
     box.appendChild(zone);
-    var inp = el('input'); inp.type = 'file'; inp.style.display = 'none'; inp.accept = kind === 'shapefile' ? '.zip,.shp,.shx,.dbf,.prj,.cpg' : kind === 'geojson' ? '.geojson,.json,application/geo+json,application/json' : '.geojson,.json,.zip,.shp,.shx,.dbf,.prj,.cpg'; if (kind !== 'geojson') inp.multiple = true; box.appendChild(inp);
+    var inp = el('input'); inp.type = 'file'; inp.style.display = 'none'; inp.accept = kind === 'shapefile' ? '.zip,.shp,.shx,.dbf,.prj,.cpg,.gpkg' : kind === 'geojson' ? '.geojson,.json,.gpkg,application/geo+json,application/json' : '.geojson,.json,.gpkg,.zip,.shp,.shx,.dbf,.prj,.cpg'; if (kind !== 'geojson') inp.multiple = true; box.appendChild(inp);
     var pick = button(kind === 'geojson' ? 'Choose file...' : 'Choose file(s)...', function () { inp.click(); }); pick.style.width = '160px'; box.appendChild(pick);
     var crsRow = el('div', 'pv-small'); crsRow.style.marginTop = '8px'; box.appendChild(crsRow);
     var status = el('div', 'pv-small'); status.style.cssText = 'margin-top:8px;min-height:18px'; box.appendChild(status);
     var addBtn = button(o.addLabel || 'Upload', function () { commit(); }); addBtn.style.cssText = 'width:200px;display:none'; box.appendChild(addBtn);
     box.appendChild(el('div', 'pv-note', 'Nothing is uploaded anywhere: the file stays in your browser and is forgotten when you leave the page.'));
-    var pending = null, gjText = null, crsSel = null;
+    var pending = null, gjObj = null, gjLayers = null, crsSel = null;      // gjObj: one FeatureCollection; gjLayers: GeoPackage tables in native coordinates
     function close() { ov.remove(); }
     x.addEventListener('click', close); ov.addEventListener('click', function (e) { if (e.target === ov) close(); });
     zone.addEventListener('click', function () { inp.click(); });
@@ -1380,17 +1447,34 @@ window.MM = (function () {
     function fail(msg) { status.textContent = msg; status.style.color = '#c00'; addBtn.style.display = 'none'; pending = null; }
     function summarize(sites, how) {
       var n = { Point: 0, LineString: 0, Polygon: 0 }; sites.forEach(function (s) { n[s.type]++; }); var named = sites.filter(function (s) { return s.name; }).length, dated = sites.filter(function (s) { return s.date; }).length;
-      var txt = sites.length + ' feature' + (sites.length === 1 ? '' : 's') + ' found: ' + n.Point + ' point' + (n.Point === 1 ? '' : 's') + ', ' + n.LineString + ' line' + (n.LineString === 1 ? '' : 's') + ', ' + n.Polygon + ' polygon' + (n.Polygon === 1 ? '' : 's') + (how ? '. ' + how : '') + ' Names found for ' + named + ', dates for ' + dated + '.' + (sites.length > max ? ' Only the first ' + max + ' will be added.' : '') + (inRegionNE(sites) ? '' : ' WARNING: the features fall outside New England; check the coordinate system.');
+      var txt = sites.length + ' feature' + (sites.length === 1 ? '' : 's') + ' found: ' + n.Point + ' point' + (n.Point === 1 ? '' : 's') + ', ' + n.LineString + ' line' + (n.LineString === 1 ? '' : 's') + ', ' + n.Polygon + ' polygon' + (n.Polygon === 1 ? '' : 's') + (how ? '. ' + how : '') + ' Names found for ' + named + ', dates for ' + dated + '.' + (inRegionNE(sites) ? '' : ' WARNING: the features fall outside New England; check the coordinate system.');
       status.textContent = txt; status.style.color = inRegionNE(sites) ? '#2e7d32' : '#e65100'; pending = sites; addBtn.style.display = sites.length ? 'inline-block' : 'none';
     }
     function parseGeo(code, how) {
-      var gj; try { gj = JSON.parse(gjText); } catch (e) { return fail('That file is not valid JSON: ' + e.message); }
-      var sites = sitesFromGeoJSON(gj, code);
+      var sites = [];
+      if (gjLayers) gjLayers.forEach(function (L2) { sites = sites.concat(sitesFromGeoJSON(L2.fc, L2.crs || code)); });
+      else sites = sitesFromGeoJSON(gjObj, code);
       if (!sites.length) return fail('No points, lines or polygons were found in the file.');
-      summarize(sites, 'Coordinates read as ' + crsLabel(code) + ' (' + how + ').');
+      summarize(sites, 'Coordinates read as ' + crsLabel(code) + ' (' + how + ').' + (gjLayers && gjLayers.length > 1 ? ' ' + gjLayers.length + ' layers.' : ''));
+    }
+    function crsRowFor(gj, det) {
+      crsRow.innerHTML = ''; crsRow.appendChild(document.createTextNode('Coordinate system: ')); crsSel = select(UPLOAD_CRS.map(function (q) { return [q[1], q[0]]; }), det.code, '300px'); crsRow.appendChild(crsSel);
+      crsRow.appendChild(el('span', 'pv-grey', ' detected from the ' + det.how + '; change it if the features land in the wrong place.'));
+      crsSel.addEventListener('change', function () { parseGeo(crsSel.value, 'your choice'); });
     }
     function ingest(files) {
       status.style.color = '#555'; status.textContent = 'Reading...'; addBtn.style.display = 'none'; crsRow.innerHTML = '';
+      gjLayers = null; gjObj = null;
+      if (isGeoPackage(files)) {                                 // a GeoPackage is accepted by every window
+        var gp = Array.prototype.slice.call(files).filter(function (f) { return /\.gpkg$/i.test(f.name); })[0];
+        status.textContent = 'Reading the GeoPackage (' + (gp.size / 1e6).toFixed(0) + ' MB)... large files take a while.';
+        readGeoPackage(gp).then(function (layers) {
+          gjLayers = layers; var unresolved = layers.filter(function (L2) { return !L2.crs; });
+          if (!unresolved.length) { var codes = layers.map(function (L2) { return L2.crs; }); parseGeo(codes[0], 'file spatial reference' + (codes.some(function (q) { return q !== codes[0]; }) ? 's' : '')); return; }
+          var det = detectCrs(unresolved[0].fc); crsRowFor(unresolved[0].fc, { code: det.code, how: det.how + '; the file\u2019s own definition could not be used' }); parseGeo(det.code, det.how);
+        }).catch(function (e) { fail('Could not read the GeoPackage: ' + (e && e.message || e)); });
+        return;
+      }
       var shpSet = kind === 'shapefile' || (kind === 'any' && isShapefileSet(files));
       if (shpSet) {
         readShapefiles(files).then(function (fcs) {
@@ -1401,16 +1485,19 @@ window.MM = (function () {
         return;
       }
       var f = files[0]; f.text().then(function (t) {
-        gjText = t; var gj; try { gj = JSON.parse(t); } catch (e) { return fail('That file is not valid JSON: ' + e.message); }
-        var det = detectCrs(gj);
-        crsRow.innerHTML = ''; crsRow.appendChild(document.createTextNode('Coordinate system: ')); crsSel = select(UPLOAD_CRS.map(function (q) { return [q[1], q[0]]; }), det.code, '300px'); crsRow.appendChild(crsSel);
-        crsRow.appendChild(el('span', 'pv-grey', ' detected from the ' + det.how + '; change it if the features land in the wrong place.'));
-        crsSel.addEventListener('change', function () { parseGeo(crsSel.value, 'your choice'); });
-        parseGeo(det.code, det.how);
+        var gj; try { gj = JSON.parse(t); } catch (e) { return fail('That file is not valid JSON: ' + e.message); }
+        gjObj = gj; var det = detectCrs(gj); crsRowFor(gj, det); parseGeo(det.code, det.how);
       }).catch(function (e) { fail('Could not read the file: ' + (e && e.message || e)); });
     }
-    function commit() { if (!pending || !pending.length) return; var sites = pending.slice(0, max); close(); if (o.onSites) o.onSites(sites); }
+    function commit() { if (!pending || !pending.length) return; var sites = pending; close(); if (o.onSites) o.onSites(sites); }
     document.body.appendChild(ov); return { close: close };
+  }
+  function inSelectedArea(geometry) {                        // the centre or any of a few vertices inside the selected marsh area
+    var b = featureBbox({ geometry: geometry }); if (inSelection((b[0] + b[2]) / 2, (b[1] + b[3]) / 2)) return true;
+    var pts = []; (function walk(q) { if (typeof q[0] === 'number') pts.push(q); else q.forEach(walk); })(geometry.coordinates);
+    var step = Math.max(1, Math.floor(pts.length / 12));
+    for (var i = 0; i < pts.length; i += step) if (inSelection(pts[i][0], pts[i][1])) return true;
+    return inSelection(pts[pts.length - 1][0], pts[pts.length - 1][1]);
   }
   function fitToGeometries(geoms, maxZoom) {
     try { var b = null; geoms.forEach(function (g) { var bb = featureBbox({ geometry: g }); b = b ? [Math.min(b[0], bb[0]), Math.min(b[1], bb[1]), Math.max(b[2], bb[2]), Math.max(b[3], bb[3])] : bb.slice(); });
@@ -1462,6 +1549,6 @@ window.MM = (function () {
     cubeReady: cubeReady, cubeAvailable: cubeAvailable, cube: cube, CUBES: CUBES, pkey: pkey, platName: platName, loadBlock: loadBlock, cubeLocate: cubeLocate, cubeLocateUtm: cubeLocateUtm, pixelSeries: pixelSeries, pixelSeriesFromBlock: pixelSeriesFromBlock, meanSeries: meanSeries, pool: pool, gridMask: gridMask, cubePixelsInMask: cubePixelsInMask, selectionMask: selectionMask, bandIndex: bandIndex,
     POOL_DS: POOL_DS, POOL_PROVENANCE: POOL_PROVENANCE, poolDataset: poolDataset, poolSlopeProps: poolSlopeProps, poolSlopeOf: poolSlopeOf, poolStatsLine: poolStatsLine, poolSeriesPts: poolSeriesPts, seriesDir: seriesDir, enableSentinel2: enableSentinel2, loadServerRaster: loadServerRaster, loadSlopeRaster: loadSlopeRaster,
     compareOn: compareOn, compareOff: compareOff,
-    geometrySeries: geometrySeries, uploadDialog: uploadDialog, featureName: featureName, featureDate: featureDate, parseDate: parseDate, nameColumn: nameColumn, dateColumn: dateColumn, matchColumn: matchColumn, explodeGeometry: explodeGeometry, sitesFromGeoJSON: sitesFromGeoJSON, readShapefiles: readShapefiles, fitToGeometries: fitToGeometries, UPLOAD_CRS: UPLOAD_CRS
+    geometrySeries: geometrySeries, uploadDialog: uploadDialog, featureName: featureName, featureDate: featureDate, parseDate: parseDate, nameColumn: nameColumn, dateColumn: dateColumn, matchColumn: matchColumn, explodeGeometry: explodeGeometry, sitesFromGeoJSON: sitesFromGeoJSON, readShapefiles: readShapefiles, fitToGeometries: fitToGeometries, inSelectedArea: inSelectedArea, readGeoPackage: readGeoPackage, UPLOAD_CRS: UPLOAD_CRS
   };
 })();
