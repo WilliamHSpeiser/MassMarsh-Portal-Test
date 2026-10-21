@@ -367,7 +367,7 @@
       deliver(h, 'AssessmentReport');
     }).catch(function (e) { log('ERROR: ' + e.message, true); MM.backButton(MM.showLanding); });
   }
-  function headerLines() { var fb = poolFallback(); return '<p>Generated: ' + new Date().toLocaleDateString() + '</p><p>Satellite: Landsat | Index: ' + S.opts.index + '</p>' + (A.opts.pools ? '<p style="font-size:11px;font-style:italic;color:#666">' + esc(fb || ('Pool statistics: ' + POOL_D.label + '. Pool charts use summer (Jun-Aug) scenes only.')) + '</p>' : ''); }
+  function headerLines() { var fb = poolFallback(); return '<p>Generated: ' + new Date().toLocaleDateString() + '</p><p>Satellite: ' + S.opts.satellite + ' | Index: ' + S.opts.index + '</p>' + (A.opts.pools ? '<p style="font-size:11px;font-style:italic;color:#666">' + esc(fb || ('Pool statistics: ' + POOL_D.label + '. Pool charts use summer (Jun-Aug) scenes only.')) + '</p>' : ''); }
   // the assessment sections (Site Overview ... Data Sources) as an HTML string; map chips and card series are built here
   function buildAssessmentBody(log) {
     var st = A.stats; var w = words(); var idx = S.opts.index; var sel = S.selection; var bbox = sel.bbox; var fb = poolFallback();
@@ -463,6 +463,7 @@
     box.innerHTML = '<div style="font-weight:bold;color:' + site.color + ';margin-bottom:4px">' + displayName(site) + ' <span style="color:#666;font-weight:normal">(' + (site.type === 'LineString' ? 'line' : site.type.toLowerCase()) + (site.date ? ', restored ' + site.date : '') + ')</span></div><div style="color:#888">Loading the Landsat ' + S.opts.index + ' time series...</div>';
     var pop = L.popup({ maxWidth: 400, minWidth: 360, offset: L.point(0, -4), autoPan: true, autoPanPadding: L.point(20, 70), className: 'pv-site-popup' }).setLatLng(anchor).setContent(box).openOn(map);
     pop.siteId = site.id; Rz.popup = pop;
+    if (!Rz.popupHook) { Rz.popupHook = true; map.on('popupclose', function (e) { if (e.popup && e.popup.siteId !== undefined) { MM.stopSwipes(); if (Rz.popup === e.popup) Rz.popup = null; } }); }
     siteResult(site).then(function (r) {
       if (Rz.popup !== pop) return;
       if (r.error || !r.timeSeries.length) { box.lastChild.textContent = r.error || 'No data available for this site'; box.lastChild.style.color = '#c00'; return; }
@@ -470,7 +471,9 @@
         ? 'Before restoration: ' + fmtSlope(r.preSlope) + ' (' + r.preCount + ' scenes) \u00b7 after: ' + fmtSlope(r.postSlope) + ' (' + r.postCount + ' scenes)'
         : 'Trend: ' + fmtSlope(r.overallSlope) + ' over ' + r.overallCount + ' scenes';
       box.lastChild.outerHTML = restorationChartSVG(r, 350, 190) + '<div style="margin-top:4px;color:#444">' + txt + '</div>';
-      pop.update();
+      var sw = document.createElement('div'); sw.className = 'pv-swipe'; sw.style.marginTop = '6px'; box.appendChild(sw);   // live view: earliest colour image vs latest, like the pool / raster / ditch viewers
+      MM.imagerySwipe(sw, { geometry: site.geometry, name: displayName(site), pad: site.type === 'Point' ? 60 : 30, minBox: 120 });
+      pop.update(); setTimeout(function () { if (Rz.popup === pop) pop.update(); }, 2500);
     }).catch(function (e) { box.lastChild.textContent = 'Time series failed: ' + e.message; box.lastChild.style.color = '#c00'; });
   }
   function removeByMethod(m) { for (var i = Rz.sites.length - 1; i >= 0; i--) if (Rz.sites[i].method === m) removeSite(i); }
@@ -683,25 +686,36 @@
   }
   function regression(pts) { var n = pts.length; if (n < 2) return { slope: null, intercept: null, count: n, minX: null, maxX: null }; var sx = 0, sy = 0, sxx = 0, sxy = 0; pts.forEach(function (p) { sx += p.x; sy += p.y; sxx += p.x * p.x; sxy += p.x * p.y; }); var den = n * sxx - sx * sx; if (Math.abs(den) < 1e-10) return { slope: null, intercept: null, count: n, minX: pts[0].x, maxX: pts[n - 1].x }; var slope = (n * sxy - sx * sy) / den; return { slope: slope, intercept: (sy - slope * sx) / n, count: n, minX: pts[0].x, maxX: pts[n - 1].x }; }
   function siteSeries(site) {
-    var g = site.geometry; var idx = S.opts.index;
+    var g = site.geometry; var idx = S.opts.index, sensor = S.opts.satellite;   // the satellite and index chosen in "Select Satellite and Index"
     if (site.isPool) return MM.featureSeries({ geometry: g, properties: site.poolProps }, true).then(function (r) { return r.pts; });
     if (site.isDitch) return MM.ditchSeries({ geometry: g }).then(function (r) { return r.pts; });
-    if (g.type === 'Point') return MM.cubeReady().then(function () { return MM.pixelSeries(g.coordinates[0], g.coordinates[1], idx); }).then(function (r) { return r && r.pts ? r.pts : []; });
-    // uploaded lines are sampled along the line like ditches; a line or polygon too small to hold a marsh pixel centre falls
-    // back to the nearest marsh pixel of its centroid (within 2 pixels), the same rule the pool series use
-    function centroidFallback(pts) {
-      if (pts && pts.length) return pts;
-      var b = MM.featureBbox({ geometry: g }); var lon = (b[0] + b[2]) / 2, lat = (b[1] + b[3]) / 2;
-      return MM.cubeReady().then(function () { return MM.pixelSeries(lon, lat, idx); }).then(function (r) { return r && r.pts ? r.pts : []; });
-    }
-    if (g.type === 'LineString') return MM.ditchSeries({ geometry: g }).then(function (r) { return centroidFallback(r.pts); });
-    return MM.featureSeries({ geometry: g, properties: {} }, false).then(function (r) { return centroidFallback(r.pts); });
+    function pts(r) { return r && r.pts ? r.pts : []; }
+    function centroidPixel() { var b = MM.featureBbox({ geometry: g }); return MM.pixelSeries((b[0] + b[2]) / 2, (b[1] + b[3]) / 2, idx, sensor).then(pts); }   // nearest marsh pixel to the centre (within 2 px)
+    return MM.cubeReady().then(function () {
+      if (g.type === 'Point') return MM.pixelSeries(g.coordinates[0], g.coordinates[1], idx, sensor).then(pts);
+      var c = MM.cube(sensor), byBlock = {};
+      if (g.type === 'LineString') {                            // sampled along the line, like ditches, on this satellite's grid
+        var have = {}; Object.keys(c.index).forEach(function (t) { have[t] = {}; (c.index[t].blocks || []).forEach(function (bb) { have[t][bb[0] + '_' + bb[1]] = 1; }); });
+        var step = Math.max(5, c.res / 3), seen = {}; var utm = g.coordinates.map(function (q) { return MM.toUtm(q[0], q[1]); });
+        for (var i = 0; i < utm.length; i++) {
+          var n = i < utm.length - 1 ? Math.max(1, Math.floor(Math.hypot(utm[i + 1][0] - utm[i][0], utm[i + 1][1] - utm[i][1]) / step)) : 0;
+          for (var j = 0; j <= n; j++) {
+            var E = utm[i][0], N = utm[i][1]; if (n) { E += (utm[i + 1][0] - utm[i][0]) * j / n; N += (utm[i + 1][1] - utm[i][1]) * j / n; }
+            var loc = MM.cubeLocateUtm(E, N, sensor); var k = loc.tile + ':' + loc.row + ':' + loc.col; if (seen[k]) continue; seen[k] = 1;
+            if (!have[loc.tile] || !have[loc.tile][Math.floor(loc.row / 8) + '_' + Math.floor(loc.col / 8)]) continue;
+            (byBlock[loc.block] = byBlock[loc.block] || []).push({ row: loc.row, col: loc.col });
+          }
+        }
+      } else { var gm = MM.gridMask(MM.ringsOf(g), null, c.res); byBlock = MM.cubePixelsInMask(gm, sensor).byBlock; }
+      if (!Object.keys(byBlock).length) return centroidPixel();
+      return MM.meanSeries(byBlock, idx, null, sensor).then(function (r) { return r && r.pts && r.pts.length ? r.pts : centroidPixel(); });
+    });
   }
   function restorationChartSVG(site, W, H) {
     var ts = site.timeSeries; if (!ts.length) return '<p style="color:#999; font-style:italic;">No time series data available</p>';
     var pL = 50, pR = 20, pT = 30, pB = 40; var xs = ts.map(function (p) { return p.x; }), ys = ts.map(function (p) { return p.y; }); var minY = Math.min.apply(null, xs), maxY = Math.max.apply(null, xs); var minV = Math.min.apply(null, ys), maxV = Math.max.apply(null, ys); var rng = maxV - minV || 0.1; minV -= 0.1 * rng; maxV += 0.1 * rng;
     var sx = function (x) { return pL + (maxY === minY ? (W - pL - pR) / 2 : (x - minY) / (maxY - minY) * (W - pL - pR)); }, sy = function (y) { return pT + (H - pT - pB) - (y - minV) / (maxV - minV) * (H - pT - pB); }; var axisY = H - pB; var summerOnly = site.isPool;
-    var s = '<svg width="' + W + '" height="' + H + '" xmlns="http://www.w3.org/2000/svg" style="background:#fafafa;border:1px solid #ddd;border-radius:4px"><text x="' + (W / 2) + '" y="18" font-size="11" font-weight="bold" fill="#333" text-anchor="middle">Landsat ' + S.opts.index + ' Time Series' + (summerOnly ? ' (summer Jun-Aug scenes)' : '') + '</text>';
+    var s = '<svg width="' + W + '" height="' + H + '" xmlns="http://www.w3.org/2000/svg" style="background:#fafafa;border:1px solid #ddd;border-radius:4px"><text x="' + (W / 2) + '" y="18" font-size="11" font-weight="bold" fill="#333" text-anchor="middle">' + S.opts.satellite + ' ' + S.opts.index + ' Time Series' + (summerOnly ? ' (summer Jun-Aug scenes)' : '') + '</text>';
     s += '<line x1="' + pL + '" y1="' + pT + '" x2="' + pL + '" y2="' + axisY + '" stroke="#999"/><line x1="' + pL + '" y1="' + axisY + '" x2="' + (W - pR) + '" y2="' + axisY + '" stroke="#999"/>';
     if (minV < 0 && maxV > 0) s += '<line x1="' + pL + '" y1="' + sy(0) + '" x2="' + (W - pR) + '" y2="' + sy(0) + '" stroke="#ccc" stroke-dasharray="4,4"/>';
     if (site.hasDate) { var ry = site.restorationYear; s += '<line x1="' + sx(ry) + '" y1="' + pT + '" x2="' + sx(ry) + '" y2="' + axisY + '" stroke="#FF0000" stroke-width="2" stroke-dasharray="5,5"/><text x="' + sx(ry) + '" y="' + (pT - 5) + '" font-size="9" fill="#FF0000" text-anchor="middle">Restoration</text>';
@@ -716,7 +730,7 @@
     }
     var first = ts[0].ms, last = ts[ts.length - 1].ms; s += '<text x="' + pL + '" y="' + (axisY + 15) + '" font-size="9" font-weight="bold" fill="#333" text-anchor="start">' + MM.fmtDate(first).slice(0, 7) + '</text><text x="' + (W - pR) + '" y="' + (axisY + 15) + '" font-size="9" font-weight="bold" fill="#333" text-anchor="end">' + MM.fmtDate(last).slice(0, 7) + '</text>';
     var mid = Math.round((minY + maxY) / 2 + 1984); var midX = mid - 1984; if (midX > minY && midX < maxY) s += '<line x1="' + sx(midX) + '" y1="' + axisY + '" x2="' + sx(midX) + '" y2="' + (axisY + 5) + '" stroke="#666"/><text x="' + sx(midX) + '" y="' + (axisY + 15) + '" font-size="9" fill="#666" text-anchor="middle">' + mid + '</text>';
-    s += '<text x="' + (W / 2) + '" y="' + (H - 5) + '" font-size="10" fill="#666" text-anchor="middle">Year</text><text x="' + (pL - 5) + '" y="' + (pT + 3) + '" font-size="8" fill="#666" text-anchor="end">' + maxV.toFixed(2) + '</text><text x="' + (pL - 5) + '" y="' + (axisY + 3) + '" font-size="8" fill="#666" text-anchor="end">' + minV.toFixed(2) + '</text><text transform="translate(15,' + (H / 2) + ') rotate(-90)" font-size="9" fill="#666" text-anchor="middle">' + S.opts.index + ' (Landsat' + (summerOnly ? ', summer' : '') + ')</text></svg>';
+    s += '<text x="' + (W / 2) + '" y="' + (H - 5) + '" font-size="10" fill="#666" text-anchor="middle">Year</text><text x="' + (pL - 5) + '" y="' + (pT + 3) + '" font-size="8" fill="#666" text-anchor="end">' + maxV.toFixed(2) + '</text><text x="' + (pL - 5) + '" y="' + (axisY + 3) + '" font-size="8" fill="#666" text-anchor="end">' + minV.toFixed(2) + '</text><text transform="translate(15,' + (H / 2) + ') rotate(-90)" font-size="9" fill="#666" text-anchor="middle">' + S.opts.index + ' (' + S.opts.satellite + (summerOnly ? ', summer' : '') + ')</text></svg>';
     return s;
   }
   function generateRestorationReport() {
@@ -725,7 +739,7 @@
     processSites(function (msg) { st.textContent = msg; }).then(function (results) {
       var parts = restorationSections(results, false);
       var h = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>MassMarsh Restoration Efficacy Report</title><style>body{font-family:Arial,sans-serif;max-width:900px;margin:0 auto;padding:20px;color:#333}h1{color:#881c1c;border-bottom:3px solid #881c1c;padding-bottom:10px}h2{color:#333;border-bottom:1px solid #999;padding-bottom:5px;margin-top:30px}.header{text-align:center;margin-bottom:30px}.stats-table{width:100%;border-collapse:collapse;margin:15px 0;font-size:11px}.stats-table th{background:#881c1c;color:#fff}.stats-table th,.stats-table td{border:1px solid #ddd;padding:5px;text-align:left}.positive{color:' + w.repPos + '}.negative{color:' + w.repNeg + '}.footer{margin-top:40px;padding-top:20px;border-top:1px solid #ddd;font-size:11px;color:#666;text-align:center}</style></head><body>';
-      h += '<div class="header"><h1>MassMarsh Restoration Efficacy Report</h1><p>Generated: ' + new Date().toLocaleDateString() + '</p><p>Satellite: Landsat | Index: ' + idx + (parts.anyPool ? ' | Pool time series: summer scenes only' : '') + '</p></div>' + parts.body;
+      h += '<div class="header"><h1>MassMarsh Restoration Efficacy Report</h1><p>Generated: ' + new Date().toLocaleDateString() + '</p><p>Satellite: ' + S.opts.satellite + ' | Index: ' + idx + (parts.anyPool ? ' | Pool time series: summer scenes only' : '') + '</p></div>' + parts.body;
       if (parts.anyPool || parts.hasDitches) h += '<h2>Data Sources and Citations</h2><div style="font-size:11px;color:#555;line-height:1.6">' + (parts.anyPool ? '<p><strong>Pools:</strong> ' + esc(POOL_D.provenance) + '</p>' : '') + (parts.hasDitches ? '<p><strong>Ditches:</strong> ' + CIT_DITCH + '</p>' : '') + '</div>';
       h += footer('');
       deliver(h, 'RestorationEfficacyReport');
