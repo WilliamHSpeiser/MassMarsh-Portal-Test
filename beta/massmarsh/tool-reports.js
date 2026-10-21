@@ -436,7 +436,7 @@
   function showSiteSelection() {
     rui = {}; clearSites(); MM.clearToolLayers(); MM.stopDraw(); MM.setClickHandler(null); MM.clearSide(); MM.titlePanel('Restoration Efficacy Report');
     add(el('div', 'pv-h lg', 'Step 3: Site Selection Method')); add(el('div', 'pv-small', 'Select how you want to define restoration sites:'));
-    var sel = add(MM.select(['Draw Points', 'Draw Polygons', 'GeoJSON Upload (beta)', 'Shapefile Upload (beta)', 'Paste GeoJSON', 'Input Coordinates', 'Select Pools', 'Select Ditches', 'Select Pools and Ditches'], 'Draw Points', '200px'));
+    var sel = add(MM.select(['Draw Points', 'Draw Polygons', 'GeoJSON Upload', 'Shapefile Upload', 'Paste GeoJSON', 'Input Coordinates', 'Select Pools', 'Select Ditches', 'Select Pools and Ditches'], 'Draw Points', '200px'));
     rui.method = add(el('div')); rui.sites = add(el('div')); thin();
     var gen = add(button('Generate Report', function () { if (!Rz.sites.length) { rui.sites.innerHTML = ''; var e = el('div', 'pv-err', 'Please add at least one restoration site.'); e.style.cssText = 'font-size:12px;font-weight:bold;color:#c00'; rui.sites.appendChild(e); return; } generateRestorationReport(); })); gen.style.width = '100%';
     thin('light'); add(button('← Back', function () { MM.stopDraw(); MM.setClickHandler(null); MM.clearToolLayers(); showRestorationSatellite(); }, 'pv-back'));
@@ -505,7 +505,7 @@
       function addEntry() { var num = list.length + 1; var box = el('div'); box.style.cssText = 'background:#f5f5f5;padding:6px;margin:4px 0'; var h = el('div', 'pv-small', 'Site ' + num + ':'); h.style.cssText = 'font-weight:bold;color:' + SITE_COLORS[(num - 1) % 25]; box.appendChild(h); var r1 = el('div', 'pv-row'); var lon = el('input'); lon.type = 'text'; lon.placeholder = 'Longitude'; lon.style.width = '100px'; var lat = el('input'); lat.type = 'text'; lat.placeholder = 'Latitude'; lat.style.width = '100px'; r1.appendChild(lon); r1.appendChild(lat); box.appendChild(r1); var r2 = el('div', 'pv-row'); r2.appendChild(el('span', 'pv-small', 'Date:')); var dt = el('input'); dt.type = 'text'; dt.placeholder = 'YYYY-MM-DD (optional)'; dt.style.width = '120px'; r2.appendChild(dt); box.appendChild(r2); var r3 = el('div', 'pv-row'); r3.appendChild(el('span', 'pv-small', 'Name:')); var nm = el('input'); nm.type = 'text'; nm.placeholder = 'Site name (optional)'; nm.style.width = '150px'; r3.appendChild(nm); box.appendChild(r3); entries.appendChild(box); list.push({ lon: lon, lat: lat, date: dt, name: nm, color: SITE_COLORS[(num - 1) % 25] }); }
       addEntry(); var ab = button('+ Add Another Site', addEntry, 'small'); c.appendChild(ab);
       c.appendChild(button('Apply Coordinates', function () { removeByMethod('Input Coordinates'); list.forEach(function (e) { var lo = parseFloat(e.lon.value), la = parseFloat(e.lat.value); if (isNaN(lo) || isNaN(la)) return; addSite({ type: 'Point', coordinates: [lo, la] }, 'Point', e.color, e.date.value.trim(), e.name.value.trim() || undefined, 'Input Coordinates'); }); }, 'small'));
-    } else if (m === 'GeoJSON Upload (beta)' || m === 'Shapefile Upload (beta)') uploadMethodUI(m);
+    } else if (m === 'GeoJSON Upload' || m === 'Shapefile Upload') uploadMethodUI(m);
     else pickUI(m);
   }
   function pickUI(m) {
@@ -613,7 +613,7 @@
     });
   }
   function uploadMethodUI(m) {
-    var c = rui.method; var shp = m === 'Shapefile Upload (beta)';
+    var c = rui.method; var shp = m === 'Shapefile Upload';
     c.appendChild(el('div', 'pv-small', shp ? 'Upload a shapefile of your restoration sites (a .zip, or the .shp, .shx, .dbf and .prj files together).' : 'Upload a GeoJSON file of your restoration sites.'));
     c.appendChild(el('div', 'pv-grey', 'Every point, line and polygon in the file becomes a site, just like drawing it. Properties "name" and "date" (restoration date) are used when present. Nothing is uploaded anywhere: the file stays in your browser and is forgotten when you leave the page.'));
     var ob = button(shp ? 'Open shapefile window' : 'Open GeoJSON window', function () { uploadDialog(m); }); ob.style.width = '200px'; c.appendChild(ob);
@@ -621,10 +621,10 @@
     uploadDialog(m);
   }
   function uploadDialog(m) {
-    var shp = m === 'Shapefile Upload (beta)';
+    var shp = m === 'Shapefile Upload';
     var ov = el('div', 'pv-overlay'); var box = el('div', 'pv-dialog'); box.style.width = 'min(520px, 92vw)'; ov.appendChild(box);
     var x = el('button', 'pv-dialog-x', '×'); x.setAttribute('aria-label', 'Close'); box.appendChild(x);
-    box.appendChild(el('div', 'pv-dialog-h', shp ? 'Shapefile Upload (beta)' : 'GeoJSON Upload (beta)'));
+    box.appendChild(el('div', 'pv-dialog-h', shp ? 'Shapefile Upload' : 'GeoJSON Upload'));
     box.appendChild(el('div', 'pv-small', shp ? 'Drop a .zip of the shapefile here, or the .shp, .shx, .dbf and .prj files together.' : 'Drop a .geojson or .json file here.'));
     var zone = el('div', '', shp ? 'Drag the shapefile here' : 'Drag the GeoJSON file here'); zone.style.cssText = 'margin:12px 0 8px;padding:34px 10px;border:2px dashed #b0bec5;border-radius:10px;background:#f7f9fb;text-align:center;color:#607d8b;font-size:14px;cursor:pointer';
     box.appendChild(zone);
