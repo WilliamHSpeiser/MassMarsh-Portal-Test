@@ -394,7 +394,9 @@ window.MM = (function () {
     ['assessment_report', 'restoration_report', 'comprehensive_report'].forEach(toolButton);
     add(el('div', 'pv-divider')).style.margin = '20px 0 15px 0';
     labelWithInfo('Analysis Tools', 'Explore marsh dynamics with our specialized analysis tools:\n\n• Pool Viewer – Summer-scene (June-August) time series and Landsat / Sentinel-2 MNDWI, NDWI and NDVI trajectories for individual pools; per-pool slope statistics are pre-computed for Landsat MNDWI (1985-2026) and Sentinel-2 MNDWI (2015-2023)\n\n• Ditch Viewer – Examine and analyze time series trends for ditches from Peck et al., 2025\n\n• Raster Viewer – Examine rasters and analyze time series trends for individual and groups of pixels\n\n• Data Viewer – Upload your own GeoJSON or shapefile (points, lines, polygons): each feature is coloured by its trajectory and opens a time series and live imagery view\n\n• Comprehensive Viewer – All viewers combined in one toolbox');
-    ['pool_viewer', 'ditch_viewer', 'raster_viewer', 'data_viewer', 'comprehensive_viewer'].forEach(toolButton);
+    ['pool_viewer', 'ditch_viewer', 'raster_viewer', 'data_viewer'].forEach(toolButton);
+    var sep = add(el('div')); sep.style.cssText = 'border-top:1px dotted #bbb;margin:18px 0 16px 0';   // the Comprehensive Viewer (all viewers in one) sits apart from the single-feature viewers
+    toolButton('comprehensive_viewer');
     add(el('div', 'pv-divider')).style.margin = '20px 0 15px 0';
     labelWithInfo('External Products', 'Access external data products and specialized analyses:\n\n• UVVR Viewer – Vegetated Fraction (%) measures the percentage of vegetated marsh surface. From Ganju et al., 2022.\n\n• LiDAR Viewer – Analyze LiDAR elevation data with transect profiling tools.\n\n• Historical Imagery Viewer – Compare historical aerial imagery from 1938 to present with opacity slider.');
     ['uvvr_viewer', 'lidar_viewer', 'historical_imagery'].forEach(toolButton);
