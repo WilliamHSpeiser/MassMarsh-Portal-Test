@@ -713,7 +713,7 @@ window.MM = (function () {
       var msg = function (t) { P.trendInfo.appendChild(el('div', 'pv-err', t)); };
       if (!P.pts || !P.pts.length) return msg('No time series data available.');
       if (P.breakpoints.length >= 4) return msg('Maximum of 4 breakpoints reached.');
-      var d = P.bpInput.value.trim(); if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return msg('Invalid date format. Use YYYY-MM-DD.');
+      var d = parseDate(P.bpInput.value.trim()); if (!d) return msg('Could not read that date (try 2015-06-01, 6/1/2015 or June 1, 2015).');
       if (P.breakpoints.some(function (b) { return b.dateStr === d; })) return msg('This breakpoint already exists.');
       var ms = Date.parse(d + 'T00:00:00Z'); var yrs = (ms - EPOCH_MS) / YEAR_MS; var first = P.pts[0].years, last = P.pts[P.pts.length - 1].years;
       if (!(first < yrs && yrs < last)) return msg('Breakpoint must be within the data range.');
@@ -1247,15 +1247,41 @@ window.MM = (function () {
   function nameColumn(props) { return keyByKeys(props, NAME_KEYS); }
   function dateColumn(props) { return keyByKeys(props, DATE_KEYS); }
   function featureName(props) { var v = propByKeys(props, NAME_KEYS); return v === null ? null : String(v).trim(); }
-  function parseDate(v) {                                      // -> 'YYYY-MM-DD' or '' (years alone become 1 July of that year)
-    if (v === null || v === undefined) return ''; var s = String(v).trim(); if (!s) return '';
-    function ok(y, m, d) { y = +y; m = +m; d = +d; return y >= 1900 && y <= 2100 && m >= 1 && m <= 12 && d >= 1 && d <= 31 ? y + '-' + ('0' + m).slice(-2) + '-' + ('0' + d).slice(-2) : ''; }
+  var MONTHS = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, sept: 9, oct: 10, nov: 11, dec: 12 };
+  function monthNum(name) { var k = String(name).toLowerCase(); if (MONTHS[k.slice(0, 4)] !== undefined) return MONTHS[k.slice(0, 4)]; return MONTHS[k.slice(0, 3)] || 0; }
+  function year2(y) { y = +y; return y < 100 ? (y < 50 ? 2000 + y : 1900 + y) : y; }   // two-digit years: 00-49 -> 2000s, 50-99 -> 1900s
+  function ymd(y, m, d) {
+    y = +y; m = +m; d = +d; if (!(y >= 1900 && y <= 2100 && m >= 1 && m <= 12 && d >= 1 && d <= 31)) return '';
+    var dt = new Date(Date.UTC(y, m - 1, d)); if (dt.getUTCMonth() + 1 !== m) return '';          // e.g. 31 April
+    return y + '-' + ('0' + m).slice(-2) + '-' + ('0' + d).slice(-2);
+  }
+  // Any common date form -> 'YYYY-MM-DD' (or '' when unreadable): yyyy-mm-dd / yyyy/mm/dd / yyyy.mm.dd (yyyy-dd-mm when the
+  // middle number cannot be a month), mm/dd/yyyy, m/d/yy, dd/mm/yyyy (when the first number cannot be a month), yyyymmdd,
+  // "June 1, 2015", "1 June 2015", "Jun-2015", "June 2015" (mid-month), "2015-06" (mid-month), a year alone (1 July),
+  // datetimes (the date part is kept), Excel serial days, unix seconds / milliseconds, and JavaScript Date objects.
+  function parseDate(v) {
+    if (v === null || v === undefined) return '';
+    if (v instanceof Date) return isNaN(v.getTime()) ? '' : ymd(v.getUTCFullYear(), v.getUTCMonth() + 1, v.getUTCDate());
+    if (typeof v === 'number') {
+      if (!isFinite(v)) return '';
+      if (v >= 1e12) return parseDate(new Date(v)); if (v >= 1e9) return parseDate(new Date(v * 1000));
+      if (v >= 19000101 && v <= 21001231) return ymd(Math.floor(v / 10000), Math.floor(v / 100) % 100, v % 100);
+      if (v >= 20000 && v <= 80000) return parseDate(new Date(Date.UTC(1899, 11, 30) + Math.round(v) * 86400000));
+      if (v >= 1900 && v <= 2100 && v === Math.floor(v)) return ymd(v, 7, 1);
+      return '';
+    }
+    var s = String(v).trim().replace(/^["']+|["']+$/g, '').replace(/\s+/g, ' ').trim(); if (!s) return '';
     var m;
-    if ((m = s.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/))) return ok(m[1], m[2], m[3]);
-    if ((m = s.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})/))) return ok(m[3], m[1], m[2]);
-    if ((m = s.match(/^(\d{4})(\d{2})(\d{2})$/))) return ok(m[1], m[2], m[3]);
-    if ((m = s.match(/^(\d{4})(?:\.0+)?$/))) return ok(m[1], 7, 1);
-    var t = Date.parse(s); if (!isNaN(t)) { var d = new Date(t); return ok(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate()); }
+    if ((m = s.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})(?:[T ].*)?$/))) { var a = +m[2], b = +m[3]; return (a > 12 && b <= 12) ? ymd(m[1], b, a) : ymd(m[1], a, b); }
+    if ((m = s.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4}|\d{2})(?:[T ].*)?$/))) { var p1 = +m[1], q1 = +m[2], y1 = year2(m[3]); return (p1 > 12 && q1 <= 12) ? ymd(y1, q1, p1) : ymd(y1, p1, q1); }
+    if ((m = s.match(/^(\d{4})(\d{2})(\d{2})(?:[T ].*)?$/))) return ymd(m[1], m[2], m[3]);
+    if ((m = s.match(/^(\d{4})[-\/.](\d{1,2})$/))) return ymd(m[1], m[2], 15);
+    if ((m = s.match(/^(\d{4})(?:\.0+)?$/))) return ymd(m[1], 7, 1);
+    if ((m = s.match(/^([A-Za-z]{3,9})\.?,? ?(\d{1,2})(?:st|nd|rd|th)?,? (\d{4}|\d{2})(?:[T ,].*)?$/)) && monthNum(m[1])) return ymd(year2(m[3]), monthNum(m[1]), m[2]);
+    if ((m = s.match(/^(\d{1,2})(?:st|nd|rd|th)?[-\/ ]([A-Za-z]{3,9})\.?,?[-\/ ](\d{4}|\d{2})(?:[T ,].*)?$/)) && monthNum(m[2])) return ymd(year2(m[3]), monthNum(m[2]), m[1]);
+    if ((m = s.match(/^([A-Za-z]{3,9})\.?[-\/ ,]+(\d{4}|\d{2})$/)) && monthNum(m[1])) return ymd(year2(m[2]), monthNum(m[1]), 15);
+    if ((m = s.match(/^(\d{4})[-\/ ]([A-Za-z]{3,9})\.?(?:[-\/ ](\d{1,2}))?$/)) && monthNum(m[2])) return ymd(m[1], monthNum(m[2]), m[3] || 15);
+    var t = Date.parse(s); if (!isNaN(t)) { var d = new Date(t); return ymd(d.getFullYear(), d.getMonth() + 1, d.getDate()); }
     return '';
   }
   function featureDate(props) { var v = propByKeys(props, DATE_KEYS); return v === null ? '' : parseDate(v); }
