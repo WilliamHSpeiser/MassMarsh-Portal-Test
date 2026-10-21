@@ -1165,10 +1165,32 @@ window.MM = (function () {
   function compareOff() { if (!layout || !compare || !layout.classList.contains('compare')) return; layout.classList.remove('compare'); compare.classList.remove('on'); setTimeout(function () { map.invalidateSize(); }, 50); }
 
   // ---------- init ----------
+  // The side panel and the header were laid out on a large desktop display; on smaller screens (laptops, scaled displays)
+  // they are zoomed down so the page keeps the desktop proportions without the user zooming the browser. Reference
+  // viewport 1900 x 1000 CSS px, never below 0.7 and never above 1; phones (<= 800 px, column layout) are left alone.
+  // Only the panel and header are zoomed: the map is never scaled, it just gets the extra room.
+  // Chart.js reads pointer positions from offsetX/offsetY, which browsers report in zoomed units inside a CSS-zoomed
+  // element, so hover and tooltips would miss by the zoom factor. Recompute every chart event from clientX/Y and the
+  // canvas rectangle instead (both in viewport units): correct with or without zoom, in every browser.
+  if (window.Chart && Chart.register) Chart.register({ id: 'mmPointerFix', beforeEvent: function (chart, args) {
+    var n = args.event && args.event.native; if (!n) return; var p = (n.touches && n.touches[0]) || (n.changedTouches && n.changedTouches[0]) || n;
+    if (p.clientX === undefined) return; var r = chart.canvas.getBoundingClientRect(); if (!r.width || !r.height) return;
+    args.event.x = (p.clientX - r.left) / r.width * chart.width; args.event.y = (p.clientY - r.top) / r.height * chart.height;
+    args.inChartArea = chart.isPointInArea(args.event);
+  } });
+  var uiScaleTimer = null;
+  function uiScale() {
+    var w = window.innerWidth, h = window.innerHeight, s = 1;
+    if (w > 800) s = Math.max(0.7, Math.min(1, w / 1900, h / 1000));
+    var z = s < 0.995 ? String(Math.round(s * 100) / 100) : '';
+    [side, document.querySelector('.mm-header')].forEach(function (n) { if (n && n.style.zoom !== z) n.style.zoom = z; });
+    setTimeout(function () { try { map.invalidateSize(); } catch (e) {} }, 60);
+  }
+  window.addEventListener('resize', function () { clearTimeout(uiScaleTimer); uiScaleTimer = setTimeout(uiScale, 120); });
   function boot(opts) {
     opts = opts || {}; S.only = opts.only || null;
     var want = (location.search.match(/[?&]tool=([a-z_]+)/) || [])[1];
-    showLanding(); placeMapTools(); placeSearch();
+    uiScale(); showLanding(); placeMapTools(); placeSearch();
     if (want && tools[want] && !S.only) startTool(want);
   }
   window.addEventListener('error', function (e) { side.appendChild(el('div', 'pv-err', 'Unexpected error: ' + (e.message || e.type) + ' (reload the page if the tool stops responding)')); });
