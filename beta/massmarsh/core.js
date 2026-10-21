@@ -443,7 +443,7 @@ window.MM = (function () {
     var offerBoxes = !!opt.boundingBoxes; var methods = opt.methods || (offerBoxes ? ['Bounding Boxes', 'Marsh Units', 'Aggregated Units', 'Draw'] : ['Marsh Units', 'Aggregated Units', 'Draw']);
     var method = opt.defaultMethod || methods[0];
     sel1 = { method: method, units: {}, onComplete: onComplete, toolName: toolName };
-    titlePanel(toolName);
+    titlePanel(toolName, (tools[S.activeTool] && tools[S.activeTool].beta) ? 'beta' : null);
     add(el('div', 'pv-step', 'Step 1: Select Assessment Area'));
     add(el('div', 'pv-h', 'Assessment Area Selection Method:'));
     var methodSel = add(select(methods, method, '200px')); methodSel.style.margin = '0 0 15px 0';
