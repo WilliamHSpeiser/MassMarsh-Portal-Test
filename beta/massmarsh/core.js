@@ -1234,6 +1234,18 @@ window.MM = (function () {
     for (var i = 0; i < keys.length; i++) { var v = norm[keys[i]]; if (v !== undefined && v !== null && String(v).trim() !== '') return v; }
     return null;
   }
+  function keyByKeys(props, keys) {                       // the original column name that matched, or null
+    if (!props) return null; var norm = {}; Object.keys(props).forEach(function (k) { var n = normKey(k); if (!(n in norm)) norm[n] = k; });
+    for (var i = 0; i < keys.length; i++) { var k = norm[keys[i]]; if (k !== undefined) { var v = props[k]; if (v !== undefined && v !== null && String(v).trim() !== '') return k; } }
+    return null;
+  }
+  function matchColumn(props, name) {                     // the column of props whose name equals `name` (case, spaces, underscores ignored)
+    if (!props || !name) return null; var want = normKey(name); var keys = Object.keys(props);
+    for (var i = 0; i < keys.length; i++) if (normKey(keys[i]) === want) return keys[i];
+    return null;
+  }
+  function nameColumn(props) { return keyByKeys(props, NAME_KEYS); }
+  function dateColumn(props) { return keyByKeys(props, DATE_KEYS); }
   function featureName(props) { var v = propByKeys(props, NAME_KEYS); return v === null ? null : String(v).trim(); }
   function parseDate(v) {                                      // -> 'YYYY-MM-DD' or '' (years alone become 1 July of that year)
     if (v === null || v === undefined) return ''; var s = String(v).trim(); if (!s) return '';
@@ -1420,6 +1432,6 @@ window.MM = (function () {
     cubeReady: cubeReady, cubeAvailable: cubeAvailable, cube: cube, CUBES: CUBES, pkey: pkey, platName: platName, loadBlock: loadBlock, cubeLocate: cubeLocate, cubeLocateUtm: cubeLocateUtm, pixelSeries: pixelSeries, pixelSeriesFromBlock: pixelSeriesFromBlock, meanSeries: meanSeries, pool: pool, gridMask: gridMask, cubePixelsInMask: cubePixelsInMask, selectionMask: selectionMask, bandIndex: bandIndex,
     POOL_DS: POOL_DS, POOL_PROVENANCE: POOL_PROVENANCE, poolDataset: poolDataset, poolSlopeProps: poolSlopeProps, poolSlopeOf: poolSlopeOf, poolStatsLine: poolStatsLine, poolSeriesPts: poolSeriesPts, seriesDir: seriesDir, enableSentinel2: enableSentinel2, loadServerRaster: loadServerRaster, loadSlopeRaster: loadSlopeRaster,
     compareOn: compareOn, compareOff: compareOff,
-    geometrySeries: geometrySeries, uploadDialog: uploadDialog, featureName: featureName, featureDate: featureDate, parseDate: parseDate, explodeGeometry: explodeGeometry, sitesFromGeoJSON: sitesFromGeoJSON, readShapefiles: readShapefiles, fitToGeometries: fitToGeometries, UPLOAD_CRS: UPLOAD_CRS
+    geometrySeries: geometrySeries, uploadDialog: uploadDialog, featureName: featureName, featureDate: featureDate, parseDate: parseDate, nameColumn: nameColumn, dateColumn: dateColumn, matchColumn: matchColumn, explodeGeometry: explodeGeometry, sitesFromGeoJSON: sitesFromGeoJSON, readShapefiles: readShapefiles, fitToGeometries: fitToGeometries, UPLOAD_CRS: UPLOAD_CRS
   };
 })();
