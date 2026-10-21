@@ -184,8 +184,8 @@ window.MM = (function () {
   function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
   function add(n) { side.appendChild(n); return n; }
   function clearSide() { side.innerHTML = ''; mapLegend(null); }
-  function titlePanel(sub) {                                 // "MassMarsh:" links to the portal home: './' resolves to the page's own directory (beta/ now, the site root later)
-    var t = el('div', 'pv-title'); var brand = el('a', 'brand', 'MassMarsh:'); brand.href = './'; brand.title = 'MassMarsh Remote Sensing Portal home'; t.appendChild(brand); t.appendChild(el('span', 'sub', sub)); add(t); add(el('div', 'pv-divider'));
+  function titlePanel(sub, badge) {                          // "MassMarsh:" links to the portal home: './' resolves to the page's own directory (beta/ now, the site root later); badge e.g. 'beta'
+    var t = el('div', 'pv-title'); var brand = el('a', 'brand', 'MassMarsh:'); brand.href = './'; brand.title = 'MassMarsh Remote Sensing Portal home'; t.appendChild(brand); t.appendChild(el('span', 'sub', sub)); if (badge) t.appendChild(el('span', 'pv-beta', badge)); add(t); add(el('div', 'pv-divider'));
   }
   function thin(cls) { return add(el('div', 'pv-thin' + (cls ? ' ' + cls : ''))); }
   function button(label, cb, cls) { var b = el('button', cls || ''); if (/^\u2190 /.test(label)) { var ar = el('span', 'pv-arrow', '\u2190'); b.appendChild(ar); b.appendChild(document.createTextNode(label.slice(1))); } else if (/ \u2192$/.test(label)) { b.appendChild(document.createTextNode(label.slice(0, -1))); b.appendChild(el('span', 'pv-arrow pv-arrow-r', '\u2192')); } else b.textContent = label; b.addEventListener('click', cb); return b; }
@@ -425,6 +425,7 @@ window.MM = (function () {
   }
   function toolButton(id) {
     var t = tools[id]; var b = add(button(t ? t.label : (TOOL_LABELS[id] || id), function () { startTool(id); }, 'wide'));
+    if (t && t.beta) b.appendChild(el('span', 'pv-beta', 'beta'));
     if (!t) { b.disabled = true; b.title = 'Coming soon'; }
   }
   function startTool(id) {
