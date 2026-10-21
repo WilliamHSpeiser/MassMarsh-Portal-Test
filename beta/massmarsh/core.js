@@ -186,7 +186,7 @@ window.MM = (function () {
   function add(n) { side.appendChild(n); return n; }
   function clearSide() { side.innerHTML = ''; mapLegend(null); }
   function titlePanel(sub, badge) {                          // "MassMarsh:" links to the portal home: './' resolves to the page's own directory (beta/ now, the site root later); badge e.g. 'beta'
-    var t = el('div', 'pv-title'); var brand = el('a', 'brand', 'MassMarsh:'); brand.href = './'; brand.title = 'MassMarsh Remote Sensing Portal home'; t.appendChild(brand); t.appendChild(el('span', 'sub', sub)); if (badge) t.appendChild(el('span', 'pv-beta', badge)); add(t); add(el('div', 'pv-divider'));
+    var t = el('div', 'pv-title'); var brand = el('a', 'brand', 'MassMarsh:'); brand.href = './'; brand.title = 'MassMarsh Remote Sensing Portal home'; t.appendChild(brand); var ss = el('span', 'sub'); if (/<[a-z]/.test(sub)) ss.innerHTML = sub; else ss.textContent = sub; t.appendChild(ss); if (badge) t.appendChild(el('span', 'pv-beta', badge)); add(t); add(el('div', 'pv-divider'));
   }
   function thin(cls) { return add(el('div', 'pv-thin' + (cls ? ' ' + cls : ''))); }
   function button(label, cb, cls) { var b = el('button', cls || ''); if (/^\u2190 /.test(label)) { var ar = el('span', 'pv-arrow', '\u2190'); b.appendChild(ar); b.appendChild(document.createTextNode(label.slice(1))); } else if (/ \u2192$/.test(label)) { b.appendChild(document.createTextNode(label.slice(0, -1))); b.appendChild(el('span', 'pv-arrow pv-arrow-r', '\u2192')); } else b.textContent = label; b.addEventListener('click', cb); return b; }
@@ -378,7 +378,7 @@ window.MM = (function () {
   }
 
   // ---------- landing page ----------
-  var TOOL_LABELS = { assessment_report: 'Marsh Assessment Report', restoration_report: 'Restoration Efficacy Report', comprehensive_report: 'Comprehensive Report', pool_viewer: 'Pool Viewer', ditch_viewer: 'Ditch Viewer', raster_viewer: 'Raster Viewer', data_viewer: 'Data Viewer', comprehensive_viewer: 'Comprehensive Viewer', uvvr_viewer: 'UVVR Viewer', lidar_viewer: 'LiDAR Viewer', historical_imagery: 'Historical Imagery Viewer' };
+  var TOOL_LABELS = { assessment_report: 'Marsh Assessment Report', restoration_report: 'Restoration Efficacy Report', comprehensive_report: 'Comprehensive Report', pool_viewer: 'Pool Viewer', ditch_viewer: 'Ditch Viewer', raster_viewer: 'Raster Viewer', data_viewer: 'Your Data Viewer', comprehensive_viewer: 'Comprehensive Viewer', uvvr_viewer: 'UVVR Viewer', lidar_viewer: 'LiDAR Viewer', historical_imagery: 'Historical Imagery Viewer' };
   function showLanding() {
     if (basemapCtl) basemapCtl.getContainer().style.display = 'none';      // historical basemaps are a tool feature, not a landing-page one
     exitTool(); S.mode = 'landing'; S.step = 0; clearSide();
@@ -393,7 +393,7 @@ window.MM = (function () {
     labelWithInfo('Report Generators', 'Compile a report with remote sensing information to summarize observations in a selected area and flag locations possibly requiring attention.\n\n• Marsh Assessment Report – Generate a report that summarizes feature selections and their remote sensing trajectory, or find areas that may warrant concern\n\n• Restoration Efficacy Report – Generate a report that documents the time series at selected locations within a marsh and, if desired, any changes from user-input dates (such as project implementation dates)\n\n• Comprehensive Report – Generate both above reports in the same place, on the same document');
     ['assessment_report', 'restoration_report', 'comprehensive_report'].forEach(toolButton);
     add(el('div', 'pv-divider')).style.margin = '20px 0 15px 0';
-    labelWithInfo('Analysis Tools', 'Explore marsh dynamics with our specialized analysis tools:\n\n• Pool Viewer – Summer-scene (June-August) time series and Landsat / Sentinel-2 MNDWI, NDWI and NDVI trajectories for individual pools; per-pool slope statistics are pre-computed for Landsat MNDWI (1985-2026) and Sentinel-2 MNDWI (2015-2023)\n\n• Ditch Viewer – Examine and analyze time series trends for ditches from Peck et al., 2025\n\n• Raster Viewer – Examine rasters and analyze time series trends for individual and groups of pixels\n\n• Data Viewer – Upload your own GeoJSON or shapefile (points, lines, polygons): each feature is coloured by its trajectory and opens a time series and live imagery view\n\n• Comprehensive Viewer – All viewers combined in one toolbox');
+    labelWithInfo('Analysis Tools', 'Explore marsh dynamics with our specialized analysis tools:\n\n• Pool Viewer – Summer-scene (June-August) time series and Landsat / Sentinel-2 MNDWI, NDWI and NDVI trajectories for individual pools; per-pool slope statistics are pre-computed for Landsat MNDWI (1985-2026) and Sentinel-2 MNDWI (2015-2023)\n\n• Ditch Viewer – Examine and analyze time series trends for ditches from Peck et al., 2025\n\n• Raster Viewer – Examine rasters and analyze time series trends for individual and groups of pixels\n\n• Your Data Viewer – Upload your own GeoJSON, GeoPackage or shapefile (points, lines, polygons): each feature is coloured by its trajectory and opens a time series and live imagery view\n\n• Comprehensive Viewer – All viewers combined in one toolbox');
     ['pool_viewer', 'ditch_viewer', 'raster_viewer', 'data_viewer'].forEach(toolButton);
     var sep = add(el('div')); sep.style.cssText = 'border-top:1px dotted #bbb;margin:18px 0 16px 0';   // the Comprehensive Viewer (all viewers in one) sits apart from the single-feature viewers
     toolButton('comprehensive_viewer');
@@ -428,6 +428,7 @@ window.MM = (function () {
   }
   function toolButton(id) {
     var t = tools[id]; var b = add(button(t ? t.label : (TOOL_LABELS[id] || id), function () { startTool(id); }, 'wide'));
+    if (t && t.labelHtml) b.innerHTML = t.labelHtml;
     if (t && t.beta) b.appendChild(el('span', 'pv-beta', 'beta'));
     if (!t) { b.disabled = true; b.title = 'Coming soon'; }
   }
@@ -446,7 +447,7 @@ window.MM = (function () {
     var offerBoxes = !!opt.boundingBoxes; var methods = opt.methods || (offerBoxes ? ['Bounding Boxes', 'Marsh Units', 'Aggregated Units', 'Draw'] : ['Marsh Units', 'Aggregated Units', 'Draw']);
     var method = opt.defaultMethod || methods[0];
     sel1 = { method: method, units: {}, onComplete: onComplete, toolName: toolName };
-    titlePanel(toolName, (tools[S.activeTool] && tools[S.activeTool].beta) ? 'beta' : null);
+    titlePanel((tools[S.activeTool] && tools[S.activeTool].labelHtml) || toolName, (tools[S.activeTool] && tools[S.activeTool].beta) ? 'beta' : null);
     add(el('div', 'pv-step', 'Step 1: Select Assessment Area'));
     add(el('div', 'pv-h', 'Assessment Area Selection Method:'));
     var methodSel = add(select(methods, method, '200px')); methodSel.style.margin = '0 0 15px 0';
