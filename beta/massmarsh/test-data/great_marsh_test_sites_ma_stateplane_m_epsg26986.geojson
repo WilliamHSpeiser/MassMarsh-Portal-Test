@@ -1,0 +1,16 @@
+{
+"type": "FeatureCollection",
+"name": "great_marsh_test_sites_ma_stateplane_m_epsg26986",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:EPSG::26986" } },
+"features": [
+{ "type": "Feature", "properties": { "name": "Small pool complex A (40 m)", "date": "2015-06-01", "kind": "small polygon" }, "geometry": { "type": "Polygon", "coordinates": [ [ [ 255496.042733134934679, 943689.083254582597874 ], [ 255536.030706559220562, 943690.264651568490081 ], [ 255534.849307677155593, 943730.25262909126468 ], [ 255494.861332050000783, 943729.07122611196246 ], [ 255496.042733134934679, 943689.083254582597874 ] ] ] } },
+{ "type": "Feature", "properties": { "name": "Small pool complex B (60 m)", "date": "", "kind": "small polygon" }, "geometry": { "type": "Polygon", "coordinates": [ [ [ 256792.795962870935909, 944133.667837350745685 ], [ 256852.778251799813006, 944135.439914329908788 ], [ 256851.006170639127959, 944195.422212439239956 ], [ 256791.023876713326899, 944193.650122093618847 ], [ 256792.795962870935909, 944133.667837350745685 ] ] ] } },
+{ "type": "Feature", "properties": { "name": "Large marsh block north (1.2 km)", "date": "2012-09-15", "kind": "large polygon" }, "geometry": { "type": "Polygon", "coordinates": [ [ [ 255976.181831779686036, 945766.714153724140488 ], [ 257175.829523990221787, 945802.163413505069911 ], [ 257140.378624804667197, 947001.814816421130672 ], [ 255940.728854525543284, 946966.360199024551548 ], [ 255976.181831779686036, 945766.714153724140488 ] ] ] } },
+{ "type": "Feature", "properties": { "name": "Large marsh block south (1.8 km)", "date": "", "kind": "large polygon" }, "geometry": { "type": "Polygon", "coordinates": [ [ [ 254977.807395285431994, 941786.210050152614713 ], [ 256777.263659740972798, 941839.359469976043329 ], [ 256724.110378393466817, 943638.823952542617917 ], [ 254924.649734522827202, 943585.662427770206705 ], [ 254977.807395285431994, 941786.210050152614713 ] ] ] } },
+{ "type": "Feature", "properties": { "name": "Ditch line east-west (650 m)", "date": "2018-10-01", "kind": "polyline" }, "geometry": { "type": "LineString", "coordinates": [ [ 256001.377708768006414, 944380.101977826678194 ], [ 256328.505649186903611, 944427.170009580324404 ], [ 256640.156183790822979, 944363.035232366877608 ] ] } },
+{ "type": "Feature", "properties": { "name": "Ditch line north-south (900 m)", "date": "", "kind": "polyline" }, "geometry": { "type": "LineString", "coordinates": [ [ 255518.978063546208432, 943265.327366646146402 ], [ 255474.506286748684943, 943709.342632201965898 ], [ 255511.913971357862465, 944154.009118842426687 ] ] } },
+{ "type": "Feature", "properties": { "name": "Point site 1", "date": "2016-05-20", "kind": "point" }, "geometry": { "type": "Point", "coordinates": [ 256490.809911422315054, 944606.229292870499194 ] } },
+{ "type": "Feature", "properties": { "name": "Point site 2", "date": "", "kind": "point" }, "geometry": { "type": "Point", "coordinates": [ 255191.439307816588553, 943262.731456005014479 ] } },
+{ "type": "Feature", "properties": { "name": "Point site 3 (on the beach, no marsh pixels: expect no data)", "date": "2020-07-04", "kind": "point" }, "geometry": { "type": "Point", "coordinates": [ 257379.95579879701836, 946002.141555602313019 ] } }
+]
+}
