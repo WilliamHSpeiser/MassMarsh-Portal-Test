@@ -377,7 +377,7 @@ window.MM = (function () {
   }
 
   // ---------- landing page ----------
-  var TOOL_LABELS = { assessment_report: 'Marsh Assessment Report', restoration_report: 'Restoration Efficacy Report', comprehensive_report: 'Comprehensive Report', pool_viewer: 'Pool Viewer', ditch_viewer: 'Ditch Viewer', raster_viewer: 'Raster Viewer', comprehensive_viewer: 'Comprehensive Viewer', uvvr_viewer: 'UVVR Viewer', lidar_viewer: 'LiDAR Viewer', historical_imagery: 'Historical Imagery Viewer' };
+  var TOOL_LABELS = { assessment_report: 'Marsh Assessment Report', restoration_report: 'Restoration Efficacy Report', comprehensive_report: 'Comprehensive Report', pool_viewer: 'Pool Viewer', ditch_viewer: 'Ditch Viewer', raster_viewer: 'Raster Viewer', data_viewer: 'Data Viewer', comprehensive_viewer: 'Comprehensive Viewer', uvvr_viewer: 'UVVR Viewer', lidar_viewer: 'LiDAR Viewer', historical_imagery: 'Historical Imagery Viewer' };
   function showLanding() {
     if (basemapCtl) basemapCtl.getContainer().style.display = 'none';      // historical basemaps are a tool feature, not a landing-page one
     exitTool(); S.mode = 'landing'; S.step = 0; clearSide();
@@ -392,8 +392,8 @@ window.MM = (function () {
     labelWithInfo('Report Generators', 'Compile a report with remote sensing information to summarize observations in a selected area and flag locations possibly requiring attention.\n\n• Marsh Assessment Report – Generate a report that summarizes feature selections and their remote sensing trajectory, or find areas that may warrant concern\n\n• Restoration Efficacy Report – Generate a report that documents the time series at selected locations within a marsh and, if desired, any changes from user-input dates (such as project implementation dates)\n\n• Comprehensive Report – Generate both above reports in the same place, on the same document');
     ['assessment_report', 'restoration_report', 'comprehensive_report'].forEach(toolButton);
     add(el('div', 'pv-divider')).style.margin = '20px 0 15px 0';
-    labelWithInfo('Analysis Tools', 'Explore marsh dynamics with our specialized analysis tools:\n\n• Pool Viewer – Summer-scene (June-August) time series and Landsat / Sentinel-2 MNDWI, NDWI and NDVI trajectories for individual pools; per-pool slope statistics are pre-computed for Landsat MNDWI (1985-2026) and Sentinel-2 MNDWI (2015-2023)\n\n• Ditch Viewer – Examine and analyze time series trends for ditches from Peck et al., 2025\n\n• Raster Viewer – Examine rasters and analyze time series trends for individual and groups of pixels\n\n• Comprehensive Viewer – All viewers combined in one toolbox');
-    ['pool_viewer', 'ditch_viewer', 'raster_viewer', 'comprehensive_viewer'].forEach(toolButton);
+    labelWithInfo('Analysis Tools', 'Explore marsh dynamics with our specialized analysis tools:\n\n• Pool Viewer – Summer-scene (June-August) time series and Landsat / Sentinel-2 MNDWI, NDWI and NDVI trajectories for individual pools; per-pool slope statistics are pre-computed for Landsat MNDWI (1985-2026) and Sentinel-2 MNDWI (2015-2023)\n\n• Ditch Viewer – Examine and analyze time series trends for ditches from Peck et al., 2025\n\n• Raster Viewer – Examine rasters and analyze time series trends for individual and groups of pixels\n\n• Data Viewer – Upload your own GeoJSON or shapefile (points, lines, polygons): each feature is coloured by its trajectory and opens a time series and live imagery view\n\n• Comprehensive Viewer – All viewers combined in one toolbox');
+    ['pool_viewer', 'ditch_viewer', 'raster_viewer', 'data_viewer', 'comprehensive_viewer'].forEach(toolButton);
     add(el('div', 'pv-divider')).style.margin = '20px 0 15px 0';
     labelWithInfo('External Products', 'Access external data products and specialized analyses:\n\n• UVVR Viewer – Vegetated Fraction (%) measures the percentage of vegetated marsh surface. From Ganju et al., 2022.\n\n• LiDAR Viewer – Analyze LiDAR elevation data with transect profiling tools.\n\n• Historical Imagery Viewer – Compare historical aerial imagery from 1938 to present with opacity slider.');
     ['uvvr_viewer', 'lidar_viewer', 'historical_imagery'].forEach(toolButton);
@@ -733,6 +733,11 @@ window.MM = (function () {
       drawChart(P.chart, opts.titleFn('bp'), ds, 300, 'bottom');
       caption(P.chart, 'Breakpoint' + (P.breakpoints.length === 1 ? '' : 's') + ': ' + P.breakpoints.map(function (b) { return b.dateStr; }).join(', ') + ' | ' + pts.length + ' total observations', true);
     }
+    P.setBreakpoints = function (dates) {                  // e.g. an uploaded feature's date: split the plot there (dates outside the data range are ignored)
+      P.breakpoints = []; P.trendInfo.innerHTML = ''; var any = false;
+      (dates || []).forEach(function (d) { if (!P.pts || !P.pts.length) return; var ms = Date.parse(d + 'T00:00:00Z'); var yrs = (ms - EPOCH_MS) / YEAR_MS; if (!(P.pts[0].years < yrs && yrs < P.pts[P.pts.length - 1].years)) return; P.bpInput.value = d; addBreakpoint(); any = true; });
+      return any;
+    };
     function clearBreakpoints() { P.breakpoints = []; P.trendInfo.innerHTML = ''; P.addTrend.textContent = 'Add Second Trend'; P.addTrend.disabled = false; P.trendBtns.style.display = ''; P.clearTrend.disabled = true; drawMain(); }
     function detectChangePoint() {
       P.cpInfo.innerHTML = '';
@@ -1166,6 +1171,210 @@ window.MM = (function () {
   function compareOff() { if (!layout || !compare || !layout.classList.contains('compare')) return; layout.classList.remove('compare'); compare.classList.remove('on'); setTimeout(function () { map.invalidateSize(); }, 50); }
 
   // ---------- init ----------
+  // ---------- series for any geometry (points, lines, polygons) on the chosen satellite ----------
+  // o: { sensor, index, clipPolys (list of polygons, lon/lat rings: pixels outside are ignored), clipFn(lon, lat) -> bool }
+  // Resolves to { pts, nImages }. Lines are sampled every res/3 m like ditches; features too small to hold a pixel centre
+  // use the nearest marsh pixel of their centre (within 2 px), the rule the pool series use.
+  function geometrySeries(g, o) {
+    o = o || {}; var sensor = o.sensor || S.opts.satellite, idx = o.index || S.opts.index; var c = cube(sensor);
+    function wrap(r) { return { pts: r && r.pts ? r.pts : [], nImages: r && r.nImages ? r.nImages : 0 }; }
+    function centroidPixel() {
+      var b = featureBbox({ geometry: g }); var lon = (b[0] + b[2]) / 2, lat = (b[1] + b[3]) / 2;
+      if (o.clipFn && !o.clipFn(lon, lat)) return Promise.resolve({ pts: [], nImages: 0 });
+      return pixelSeries(lon, lat, idx, sensor).then(wrap);
+    }
+    return cubeReady().then(function () {
+      if (g.type === 'Point') { if (o.clipFn && !o.clipFn(g.coordinates[0], g.coordinates[1])) return { pts: [], nImages: 0 }; return pixelSeries(g.coordinates[0], g.coordinates[1], idx, sensor).then(wrap); }
+      var byBlock = {};
+      if (g.type === 'LineString' || g.type === 'MultiLineString') {
+        var have = {}; Object.keys(c.index).forEach(function (t) { have[t] = {}; (c.index[t].blocks || []).forEach(function (bb) { have[t][bb[0] + '_' + bb[1]] = 1; }); });
+        var step = Math.max(5, c.res / 3), seen = {}; var parts = g.type === 'LineString' ? [g.coordinates] : g.coordinates;
+        parts.forEach(function (coords) {
+          var utm = coords.map(function (q) { return toUtm(q[0], q[1]); });
+          for (var i = 0; i < utm.length; i++) {
+            var n = i < utm.length - 1 ? Math.max(1, Math.floor(Math.hypot(utm[i + 1][0] - utm[i][0], utm[i + 1][1] - utm[i][1]) / step)) : 0;
+            for (var j = 0; j <= n; j++) {
+              var E = utm[i][0], N = utm[i][1]; if (n) { E += (utm[i + 1][0] - utm[i][0]) * j / n; N += (utm[i + 1][1] - utm[i][1]) * j / n; }
+              if (o.clipFn) { var ll = fromUtm(E, N); if (!o.clipFn(ll[0], ll[1])) continue; }
+              var loc = cubeLocateUtm(E, N, sensor); var k = loc.tile + ':' + loc.row + ':' + loc.col; if (seen[k]) continue; seen[k] = 1;
+              if (!have[loc.tile] || !have[loc.tile][Math.floor(loc.row / 8) + '_' + Math.floor(loc.col / 8)]) continue;
+              (byBlock[loc.block] = byBlock[loc.block] || []).push({ row: loc.row, col: loc.col });
+            }
+          }
+        });
+      } else { var gm = gridMask(ringsOf(g), o.clipPolys || null, c.res); byBlock = cubePixelsInMask(gm, sensor).byBlock; }
+      if (!Object.keys(byBlock).length) return centroidPixel();
+      return meanSeries(byBlock, idx, null, sensor).then(function (r) { return r && r.pts && r.pts.length ? wrap(r) : centroidPixel(); });
+    });
+  }
+
+  // ---------- uploaded spatial files (GeoJSON, shapefiles) ----------
+  // A window where a GeoJSON file, or a shapefile (zip or its .shp/.shx/.dbf/.prj files), is dropped or chosen. Every
+  // point, line and polygon in the file becomes one feature (multi-part geometries are split). Coordinates are converted
+  // to longitude/latitude: GeoJSON from its "crs" member or, failing that, from the range of the numbers (with a manual
+  // override); shapefiles from their .prj. Nothing is uploaded anywhere and nothing is kept after the session.
+  var UPLOAD_CRS = [
+    ['EPSG:4326', 'Longitude / latitude, WGS84 (EPSG:4326)', null],
+    ['EPSG:4269', 'Longitude / latitude, NAD83 (EPSG:4269)', '+proj=longlat +datum=NAD83 +no_defs'],
+    ['EPSG:3857', 'Web Mercator (EPSG:3857)', null],
+    ['EPSG:26919', 'UTM zone 19N, NAD83 (EPSG:26919)', '+proj=utm +zone=19 +datum=NAD83 +units=m +no_defs'],
+    ['EPSG:32619', 'UTM zone 19N, WGS84 (EPSG:32619)', '+proj=utm +zone=19 +datum=WGS84 +units=m +no_defs'],
+    ['EPSG:26918', 'UTM zone 18N, NAD83 (EPSG:26918)', '+proj=utm +zone=18 +datum=NAD83 +units=m +no_defs'],
+    ['EPSG:26986', 'Massachusetts State Plane Mainland, metres (EPSG:26986)', '+proj=lcc +lat_1=42.68333333333333 +lat_2=41.71666666666667 +lat_0=41 +lon_0=-71.5 +x_0=200000 +y_0=750000 +datum=NAD83 +units=m +no_defs'],
+    ['EPSG:2249', 'Massachusetts State Plane Mainland, US feet (EPSG:2249)', '+proj=lcc +lat_1=42.68333333333333 +lat_2=41.71666666666667 +lat_0=41 +lon_0=-71.5 +x_0=200000.0001016002 +y_0=750000 +datum=NAD83 +units=us-ft +no_defs']
+  ];
+  UPLOAD_CRS.forEach(function (x) { if (x[2] && !proj4.defs(x[0])) proj4.defs(x[0], x[2]); });
+  var SHPJS_URL = 'https://cdn.jsdelivr.net/npm/shpjs@6.1.0/dist/shp.min.js';
+  // property columns read from uploaded features (case, spaces, underscores and dashes ignored), in order of preference
+  var NAME_KEYS = ['name', 'sitename', 'site', 'title', 'label', 'siteid', 'id', 'station', 'stationname', 'plot', 'plotid', 'unit', 'unitname', 'unitid', 'location', 'locname', 'locationname', 'feature', 'featurename', 'featureid', 'marsh', 'marshname', 'pool', 'poolid', 'ditch', 'ditchid', 'code', 'key', 'project', 'projectname', 'area', 'areaname', 'fid', 'objectid', 'gid', 'uid'];
+  var DATE_KEYS = ['date', 'datetime', 'start', 'startdate', 'begin', 'begindate', 'restored', 'restorationdate', 'restoration', 'restorationyear', 'restoreddate', 'completed', 'completiondate', 'completion', 'constructed', 'constructiondate', 'construction', 'installed', 'installdate', 'treatment', 'treatmentdate', 'treated', 'event', 'eventdate', 'time', 'timestamp', 'when', 'year', 'yr'];
+  function normKey(k) { return String(k).toLowerCase().replace(/[^a-z0-9]/g, ''); }
+  function propByKeys(props, keys) {
+    if (!props) return null; var norm = {}; Object.keys(props).forEach(function (k) { var n = normKey(k); if (!(n in norm)) norm[n] = props[k]; });
+    for (var i = 0; i < keys.length; i++) { var v = norm[keys[i]]; if (v !== undefined && v !== null && String(v).trim() !== '') return v; }
+    return null;
+  }
+  function featureName(props) { var v = propByKeys(props, NAME_KEYS); return v === null ? null : String(v).trim(); }
+  function parseDate(v) {                                      // -> 'YYYY-MM-DD' or '' (years alone become 1 July of that year)
+    if (v === null || v === undefined) return ''; var s = String(v).trim(); if (!s) return '';
+    function ok(y, m, d) { y = +y; m = +m; d = +d; return y >= 1900 && y <= 2100 && m >= 1 && m <= 12 && d >= 1 && d <= 31 ? y + '-' + ('0' + m).slice(-2) + '-' + ('0' + d).slice(-2) : ''; }
+    var m;
+    if ((m = s.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/))) return ok(m[1], m[2], m[3]);
+    if ((m = s.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})/))) return ok(m[3], m[1], m[2]);
+    if ((m = s.match(/^(\d{4})(\d{2})(\d{2})$/))) return ok(m[1], m[2], m[3]);
+    if ((m = s.match(/^(\d{4})(?:\.0+)?$/))) return ok(m[1], 7, 1);
+    var t = Date.parse(s); if (!isNaN(t)) { var d = new Date(t); return ok(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate()); }
+    return '';
+  }
+  function featureDate(props) { var v = propByKeys(props, DATE_KEYS); return v === null ? '' : parseDate(v); }
+  function crsLabel(code) { var x = UPLOAD_CRS.filter(function (q) { return q[0] === code; })[0]; return x ? x[1] : code; }
+  function explodeGeometry(g) {
+    if (!g || !g.type) return [];
+    if (g.type === 'GeometryCollection') return [].concat.apply([], (g.geometries || []).map(explodeGeometry));
+    if (g.type === 'MultiPoint') return g.coordinates.map(function (q) { return { type: 'Point', coordinates: q }; });
+    if (g.type === 'MultiLineString') return g.coordinates.map(function (q) { return { type: 'LineString', coordinates: q }; });
+    if (g.type === 'MultiPolygon') return g.coordinates.map(function (q) { return { type: 'Polygon', coordinates: q }; });
+    if (g.type === 'Point' || g.type === 'LineString' || g.type === 'Polygon') return [g];
+    return [];
+  }
+  function firstCoord(g) { var q = g.coordinates; while (Array.isArray(q[0])) q = q[0]; return q; }
+  function detectCrs(gj) {                                    // "crs" member first, then the range of the numbers
+    var name = gj.crs && gj.crs.properties && gj.crs.properties.name ? String(gj.crs.properties.name) : '';
+    if (/CRS84/i.test(name)) return { code: 'EPSG:4326', how: 'file (CRS84)' };
+    var m = name.match(/EPSG:*:*(\d+)/i); if (m) return { code: 'EPSG:' + m[1], how: 'file crs tag' };
+    var feats = gj.type === 'FeatureCollection' ? (gj.features || []) : gj.type === 'Feature' ? [gj] : [{ geometry: gj }];
+    var g = null; for (var i = 0; i < feats.length && !g; i++) { var parts = explodeGeometry(feats[i] && feats[i].geometry); if (parts.length) g = parts[0]; }
+    if (!g) return { code: 'EPSG:4326', how: 'default' };
+    var q = firstCoord(g), x = Math.abs(q[0]), y = Math.abs(q[1]);
+    if (x <= 180 && y <= 90) return { code: 'EPSG:4326', how: 'degrees' };
+    if (x > 5e6 && x < 1e7 && y > 4e6 && y < 7e6) return { code: 'EPSG:3857', how: 'number range' };
+    if (x > 1e5 && x < 1e6 && y > 4.3e6 && y < 5.3e6) return { code: 'EPSG:26919', how: 'number range' };
+    if (x > 1e4 && x < 4e5 && y > 7e5 && y < 1.05e6) return { code: 'EPSG:26986', how: 'number range' };
+    if (x > 1e5 && x < 1.3e6 && y > 2.3e6 && y < 3.4e6) return { code: 'EPSG:2249', how: 'number range' };
+    return { code: 'EPSG:4326', how: 'unknown' };
+  }
+  function reprojectGeometry(g, code) {
+    if (code === 'EPSG:4326') return g;
+    function conv(q) { if (typeof q[0] === 'number') { var o = proj4(code, 'EPSG:4326', [q[0], q[1]]); return [o[0], o[1]]; } return q.map(conv); }
+    return { type: g.type, coordinates: conv(g.coordinates) };
+  }
+  function sitesFromGeoJSON(gj, code) {                      // -> [{geometry (lon/lat), type, name, date, props}]
+    var feats = gj.type === 'FeatureCollection' ? (gj.features || []) : gj.type === 'Feature' ? [gj] : [{ geometry: gj, properties: {} }];
+    var out = [];
+    feats.forEach(function (f) {
+      var props = (f && f.properties) || {}; var parts = explodeGeometry(f && f.geometry);
+      parts.forEach(function (g, k) {
+        var geom = reprojectGeometry(g, code); var q = firstCoord(geom);
+        if (!(isFinite(q[0]) && isFinite(q[1]) && Math.abs(q[0]) <= 180 && Math.abs(q[1]) <= 90)) return;
+        var nm = featureName(props);
+        out.push({ geometry: geom, type: geom.type, name: nm ? nm + (parts.length > 1 ? ' (' + (k + 1) + ')' : '') : undefined, date: featureDate(props), props: props });
+      });
+    });
+    return out;
+  }
+  function inRegionNE(sites) { return sites.every(function (s) { var q = firstCoord(s.geometry); return q[0] > -80 && q[0] < -64 && q[1] > 35 && q[1] < 48; }); }
+  function loadShpjs() { return window.shp ? Promise.resolve() : new Promise(function (res, rej) { var sc = document.createElement('script'); sc.src = SHPJS_URL; sc.onload = res; sc.onerror = function () { rej(new Error('could not load the shapefile reader')); }; document.head.appendChild(sc); }); }
+  function readShapefiles(files) {                            // zip(s) or loose .shp/.shx/.dbf/.prj -> [FeatureCollection] in lon/lat
+    return loadShpjs().then(function () {
+      var list = Array.prototype.slice.call(files); var zips = list.filter(function (f) { return /\.zip$/i.test(f.name); });
+      if (zips.length) return Promise.all(zips.map(function (f) { return f.arrayBuffer().then(function (b) { return window.shp(b); }); })).then(function (r) { return [].concat.apply([], r.map(function (x) { return Array.isArray(x) ? x : [x]; })); });
+      var byBase = {};
+      list.forEach(function (f) { var m = f.name.match(/^(.*)\.(shp|shx|dbf|prj|cpg)$/i); if (m) (byBase[m[1]] = byBase[m[1]] || {})[m[2].toLowerCase()] = f; });
+      var bases = Object.keys(byBase).filter(function (b) { return byBase[b].shp; });
+      if (!bases.length) throw new Error('no .shp file found: select the .shp, .shx, .dbf and .prj files together, or a .zip of them');
+      return Promise.all(bases.map(function (b) {
+        var set = byBase[b];
+        return Promise.all([set.shp.arrayBuffer(), set.dbf ? set.dbf.arrayBuffer() : null, set.prj ? set.prj.text() : null]).then(function (r) {
+          var geo = window.shp.parseShp(r[0], r[2] || undefined); var attrs = r[1] ? window.shp.parseDbf(r[1], null) : null;
+          return window.shp.combine([geo, attrs || geo.map(function () { return {}; })]);
+        }).then(function (fc) { fc.fileName = b; return fc; });
+      }));
+    });
+  }
+  function isShapefileSet(files) { return Array.prototype.slice.call(files).some(function (f) { return /\.(zip|shp|shx|dbf|prj|cpg)$/i.test(f.name); }); }
+  // o: { kind: 'geojson' | 'shapefile' | 'any', title, addLabel, max (default 25), onSites(sites) }
+  function uploadDialog(o) {
+    o = o || {}; var kind = o.kind || 'any'; var max = o.max || 25;
+    var ov = el('div', 'pv-overlay'); var box = el('div', 'pv-dialog'); box.style.width = 'min(520px, 92vw)'; ov.appendChild(box);
+    var x = el('button', 'pv-dialog-x', '×'); x.setAttribute('aria-label', 'Close'); box.appendChild(x);
+    box.appendChild(el('div', 'pv-dialog-h', o.title || (kind === 'shapefile' ? 'Shapefile Upload' : kind === 'geojson' ? 'GeoJSON Upload' : 'Add a spatial file')));
+    box.appendChild(el('div', 'pv-small', kind === 'shapefile' ? 'Drop a .zip of the shapefile here, or the .shp, .shx, .dbf and .prj files together.' : kind === 'geojson' ? 'Drop a .geojson or .json file here.' : 'Drop a GeoJSON file (.geojson / .json) or a shapefile (a .zip, or the .shp, .shx, .dbf and .prj files together) here.'));
+    var zone = el('div', '', kind === 'shapefile' ? 'Drag the shapefile here' : kind === 'geojson' ? 'Drag the GeoJSON file here' : 'Drag the file here'); zone.style.cssText = 'margin:12px 0 8px;padding:34px 10px;border:2px dashed #b0bec5;border-radius:10px;background:#f7f9fb;text-align:center;color:#607d8b;font-size:14px;cursor:pointer';
+    box.appendChild(zone);
+    var inp = el('input'); inp.type = 'file'; inp.style.display = 'none'; inp.accept = kind === 'shapefile' ? '.zip,.shp,.shx,.dbf,.prj,.cpg' : kind === 'geojson' ? '.geojson,.json,application/geo+json,application/json' : '.geojson,.json,.zip,.shp,.shx,.dbf,.prj,.cpg'; if (kind !== 'geojson') inp.multiple = true; box.appendChild(inp);
+    var pick = button(kind === 'geojson' ? 'Choose file...' : 'Choose file(s)...', function () { inp.click(); }); pick.style.width = '160px'; box.appendChild(pick);
+    var crsRow = el('div', 'pv-small'); crsRow.style.marginTop = '8px'; box.appendChild(crsRow);
+    var status = el('div', 'pv-small'); status.style.cssText = 'margin-top:8px;min-height:18px'; box.appendChild(status);
+    var addBtn = button(o.addLabel || 'Upload', function () { commit(); }); addBtn.style.cssText = 'width:200px;display:none'; box.appendChild(addBtn);
+    box.appendChild(el('div', 'pv-note', 'Nothing is uploaded anywhere: the file stays in your browser and is forgotten when you leave the page.'));
+    var pending = null, gjText = null, crsSel = null;
+    function close() { ov.remove(); }
+    x.addEventListener('click', close); ov.addEventListener('click', function (e) { if (e.target === ov) close(); });
+    zone.addEventListener('click', function () { inp.click(); });
+    ['dragenter', 'dragover'].forEach(function (t) { zone.addEventListener(t, function (e) { e.preventDefault(); e.stopPropagation(); zone.style.background = '#e3f2fd'; }); });
+    ['dragleave', 'drop'].forEach(function (t) { zone.addEventListener(t, function (e) { e.preventDefault(); e.stopPropagation(); zone.style.background = '#f7f9fb'; }); });
+    zone.addEventListener('drop', function (e) { if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) ingest(e.dataTransfer.files); });
+    inp.addEventListener('change', function () { if (inp.files && inp.files.length) ingest(inp.files); });
+    function fail(msg) { status.textContent = msg; status.style.color = '#c00'; addBtn.style.display = 'none'; pending = null; }
+    function summarize(sites, how) {
+      var n = { Point: 0, LineString: 0, Polygon: 0 }; sites.forEach(function (s) { n[s.type]++; }); var named = sites.filter(function (s) { return s.name; }).length, dated = sites.filter(function (s) { return s.date; }).length;
+      var txt = sites.length + ' feature' + (sites.length === 1 ? '' : 's') + ' found: ' + n.Point + ' point' + (n.Point === 1 ? '' : 's') + ', ' + n.LineString + ' line' + (n.LineString === 1 ? '' : 's') + ', ' + n.Polygon + ' polygon' + (n.Polygon === 1 ? '' : 's') + (how ? '. ' + how : '') + ' Names found for ' + named + ', dates for ' + dated + '.' + (sites.length > max ? ' Only the first ' + max + ' will be added.' : '') + (inRegionNE(sites) ? '' : ' WARNING: the features fall outside New England; check the coordinate system.');
+      status.textContent = txt; status.style.color = inRegionNE(sites) ? '#2e7d32' : '#e65100'; pending = sites; addBtn.style.display = sites.length ? 'inline-block' : 'none';
+    }
+    function parseGeo(code, how) {
+      var gj; try { gj = JSON.parse(gjText); } catch (e) { return fail('That file is not valid JSON: ' + e.message); }
+      var sites = sitesFromGeoJSON(gj, code);
+      if (!sites.length) return fail('No points, lines or polygons were found in the file.');
+      summarize(sites, 'Coordinates read as ' + crsLabel(code) + ' (' + how + ').');
+    }
+    function ingest(files) {
+      status.style.color = '#555'; status.textContent = 'Reading...'; addBtn.style.display = 'none'; crsRow.innerHTML = '';
+      var shpSet = kind === 'shapefile' || (kind === 'any' && isShapefileSet(files));
+      if (shpSet) {
+        readShapefiles(files).then(function (fcs) {
+          var sites = []; fcs.forEach(function (fc) { sites = sites.concat(sitesFromGeoJSON(fc, 'EPSG:4326')); });
+          if (!sites.length) return fail('No points, lines or polygons were found in the shapefile.');
+          summarize(sites, 'Coordinates converted from the shapefile’s .prj' + (fcs.length > 1 ? ' (' + fcs.length + ' layers)' : '') + '.');
+        }).catch(function (e) { fail('Could not read the shapefile: ' + (e && e.message || e)); });
+        return;
+      }
+      var f = files[0]; f.text().then(function (t) {
+        gjText = t; var gj; try { gj = JSON.parse(t); } catch (e) { return fail('That file is not valid JSON: ' + e.message); }
+        var det = detectCrs(gj);
+        crsRow.innerHTML = ''; crsRow.appendChild(document.createTextNode('Coordinate system: ')); crsSel = select(UPLOAD_CRS.map(function (q) { return [q[1], q[0]]; }), det.code, '300px'); crsRow.appendChild(crsSel);
+        crsRow.appendChild(el('span', 'pv-grey', ' detected from the ' + det.how + '; change it if the features land in the wrong place.'));
+        crsSel.addEventListener('change', function () { parseGeo(crsSel.value, 'your choice'); });
+        parseGeo(det.code, det.how);
+      }).catch(function (e) { fail('Could not read the file: ' + (e && e.message || e)); });
+    }
+    function commit() { if (!pending || !pending.length) return; var sites = pending.slice(0, max); close(); if (o.onSites) o.onSites(sites); }
+    document.body.appendChild(ov); return { close: close };
+  }
+  function fitToGeometries(geoms, maxZoom) {
+    try { var b = null; geoms.forEach(function (g) { var bb = featureBbox({ geometry: g }); b = b ? [Math.min(b[0], bb[0]), Math.min(b[1], bb[1]), Math.max(b[2], bb[2]), Math.max(b[3], bb[3])] : bb.slice(); });
+      if (b) map.fitBounds([[b[1], b[0]], [b[3], b[2]]], { padding: [30, 30], maxZoom: maxZoom || 15 }); } catch (e) {}
+  }
+
   // The side panel and the header were laid out on a large desktop display; on smaller screens (laptops, scaled displays)
   // they are zoomed down so the page keeps the desktop proportions without the user zooming the browser. Reference
   // viewport 1900 x 1000 CSS px, never below 0.7 and never above 1; phones (<= 800 px, column layout) are left alone.
@@ -1210,6 +1419,7 @@ window.MM = (function () {
     trendDataset: trendDataset, scatterDs: scatterDs, drawChart: drawChart, caption: caption, seriesPanel: seriesPanel, legendBlock: legendBlock, mapLegend: mapLegend, imageryCatalog: imageryCatalog, setBasemap: setBasemap, startMeasure: startMeasure, busy: busy, listservDialog: listservDialog,
     cubeReady: cubeReady, cubeAvailable: cubeAvailable, cube: cube, CUBES: CUBES, pkey: pkey, platName: platName, loadBlock: loadBlock, cubeLocate: cubeLocate, cubeLocateUtm: cubeLocateUtm, pixelSeries: pixelSeries, pixelSeriesFromBlock: pixelSeriesFromBlock, meanSeries: meanSeries, pool: pool, gridMask: gridMask, cubePixelsInMask: cubePixelsInMask, selectionMask: selectionMask, bandIndex: bandIndex,
     POOL_DS: POOL_DS, POOL_PROVENANCE: POOL_PROVENANCE, poolDataset: poolDataset, poolSlopeProps: poolSlopeProps, poolSlopeOf: poolSlopeOf, poolStatsLine: poolStatsLine, poolSeriesPts: poolSeriesPts, seriesDir: seriesDir, enableSentinel2: enableSentinel2, loadServerRaster: loadServerRaster, loadSlopeRaster: loadSlopeRaster,
-    compareOn: compareOn, compareOff: compareOff
+    compareOn: compareOn, compareOff: compareOff,
+    geometrySeries: geometrySeries, uploadDialog: uploadDialog, featureName: featureName, featureDate: featureDate, parseDate: parseDate, explodeGeometry: explodeGeometry, sitesFromGeoJSON: sitesFromGeoJSON, readShapefiles: readShapefiles, fitToGeometries: fitToGeometries, UPLOAD_CRS: UPLOAD_CRS
   };
 })();

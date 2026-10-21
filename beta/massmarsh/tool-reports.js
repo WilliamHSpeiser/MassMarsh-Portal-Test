@@ -534,182 +534,27 @@
       if (ditches) { var dd = el('div', 'pv-thin light'); c.appendChild(dd); var dc = el('div', 'pv-credit', MM.CITATIONS.ditches); dc.style.color = '#888'; c.appendChild(dc); }
     }).catch(function (e) { status.textContent = 'Feature load failed: ' + e.message; status.style.color = '#c00'; });
   }
-  // Site upload (beta): a window where a GeoJSON file, or a shapefile (zip or its .shp/.shx/.dbf/.prj files), is dropped
-  // or chosen. Every point, line and polygon in the file becomes a restoration site exactly like a drawn one (multi-part
-  // geometries are split into parts). Coordinates are converted to longitude/latitude: GeoJSON from its "crs" member or,
-  // failing that, from the range of the numbers (with a manual override); shapefiles from their .prj. Nothing is kept
-  // after the session: the sites live only in this page.
-  var UPLOAD_CRS = [
-    ['EPSG:4326', 'Longitude / latitude, WGS84 (EPSG:4326)', null],
-    ['EPSG:4269', 'Longitude / latitude, NAD83 (EPSG:4269)', '+proj=longlat +datum=NAD83 +no_defs'],
-    ['EPSG:3857', 'Web Mercator (EPSG:3857)', null],
-    ['EPSG:26919', 'UTM zone 19N, NAD83 (EPSG:26919)', '+proj=utm +zone=19 +datum=NAD83 +units=m +no_defs'],
-    ['EPSG:32619', 'UTM zone 19N, WGS84 (EPSG:32619)', '+proj=utm +zone=19 +datum=WGS84 +units=m +no_defs'],
-    ['EPSG:26918', 'UTM zone 18N, NAD83 (EPSG:26918)', '+proj=utm +zone=18 +datum=NAD83 +units=m +no_defs'],
-    ['EPSG:26986', 'Massachusetts State Plane Mainland, metres (EPSG:26986)', '+proj=lcc +lat_1=42.68333333333333 +lat_2=41.71666666666667 +lat_0=41 +lon_0=-71.5 +x_0=200000 +y_0=750000 +datum=NAD83 +units=m +no_defs'],
-    ['EPSG:2249', 'Massachusetts State Plane Mainland, US feet (EPSG:2249)', '+proj=lcc +lat_1=42.68333333333333 +lat_2=41.71666666666667 +lat_0=41 +lon_0=-71.5 +x_0=200000.0001016002 +y_0=750000 +datum=NAD83 +units=us-ft +no_defs']
-  ];
-  UPLOAD_CRS.forEach(function (c) { if (c[2] && !proj4.defs(c[0])) proj4.defs(c[0], c[2]); });
-  var SHPJS_URL = 'https://cdn.jsdelivr.net/npm/shpjs@6.1.0/dist/shp.min.js';
-  function crsLabel(code) { var c = UPLOAD_CRS.filter(function (x) { return x[0] === code; })[0]; return c ? c[1] : code; }
-  function explodeGeometry(g) {
-    if (!g || !g.type) return [];
-    if (g.type === 'GeometryCollection') return [].concat.apply([], (g.geometries || []).map(explodeGeometry));
-    if (g.type === 'MultiPoint') return g.coordinates.map(function (c) { return { type: 'Point', coordinates: c }; });
-    if (g.type === 'MultiLineString') return g.coordinates.map(function (c) { return { type: 'LineString', coordinates: c }; });
-    if (g.type === 'MultiPolygon') return g.coordinates.map(function (c) { return { type: 'Polygon', coordinates: c }; });
-    if (g.type === 'Point' || g.type === 'LineString' || g.type === 'Polygon') return [g];
-    return [];
-  }
-  function firstCoord(g) { var c = g.coordinates; while (Array.isArray(c[0])) c = c[0]; return c; }
-  function detectCrs(gj) {                                    // "crs" member first, then the range of the numbers
-    var name = gj.crs && gj.crs.properties && gj.crs.properties.name ? String(gj.crs.properties.name) : '';
-    if (/CRS84/i.test(name)) return { code: 'EPSG:4326', how: 'file (CRS84)' };
-    var m = name.match(/EPSG:*:*(\d+)/i); if (m) return { code: 'EPSG:' + m[1], how: 'file crs tag' };
-    var feats = gj.type === 'FeatureCollection' ? gj.features : gj.type === 'Feature' ? [gj] : [{ geometry: gj }];
-    var g = null; for (var i = 0; i < feats.length && !g; i++) { var parts = explodeGeometry(feats[i] && feats[i].geometry); if (parts.length) g = parts[0]; }
-    if (!g) return { code: 'EPSG:4326', how: 'default' };
-    var c = firstCoord(g), x = Math.abs(c[0]), y = Math.abs(c[1]);
-    if (x <= 180 && y <= 90) return { code: 'EPSG:4326', how: 'degrees' };
-    if (x > 5e6 && x < 1e7 && y > 4e6 && y < 7e6) return { code: 'EPSG:3857', how: 'number range' };
-    if (x > 1e5 && x < 1e6 && y > 4.3e6 && y < 5.3e6) return { code: 'EPSG:26919', how: 'number range' };
-    if (x > 1e4 && x < 4e5 && y > 7e5 && y < 1.05e6) return { code: 'EPSG:26986', how: 'number range' };
-    if (x > 1e5 && x < 1.3e6 && y > 2.3e6 && y < 3.4e6) return { code: 'EPSG:2249', how: 'number range' };
-    return { code: 'EPSG:4326', how: 'unknown' };
-  }
-  function reprojectGeometry(g, code) {
-    if (code === 'EPSG:4326') return g;
-    function conv(c) { if (typeof c[0] === 'number') { var o = proj4(code, 'EPSG:4326', [c[0], c[1]]); return [o[0], o[1]]; } return c.map(conv); }
-    return { type: g.type, coordinates: conv(g.coordinates) };
-  }
-  function sitesFromGeoJSON(gj, code) {                      // -> [{geometry (lon/lat), type, name, date}]
-    var feats = gj.type === 'FeatureCollection' ? (gj.features || []) : gj.type === 'Feature' ? [gj] : [{ geometry: gj, properties: {} }];
-    var out = [];
-    feats.forEach(function (f, i) {
-      var props = (f && f.properties) || {}; var parts = explodeGeometry(f && f.geometry);
-      parts.forEach(function (g, k) {
-        var geom = reprojectGeometry(g, code); var c = firstCoord(geom);
-        if (!(isFinite(c[0]) && isFinite(c[1]) && Math.abs(c[0]) <= 180 && Math.abs(c[1]) <= 90)) return;
-        var nm = props.name || props.Name || props.NAME || props.site || props.id || props.ID || null;
-        out.push({ geometry: geom, type: geom.type, name: nm ? String(nm) + (parts.length > 1 ? ' (' + (k + 1) + ')' : '') : undefined, date: String(props.date || props.Date || props.DATE || props.year || '').trim() });
-      });
-    });
-    return out;
-  }
-  function inRegion(sites) { return sites.every(function (s) { var c = firstCoord(s.geometry); return c[0] > -80 && c[0] < -64 && c[1] > 35 && c[1] < 48; }); }
-  function loadShpjs() { return window.shp ? Promise.resolve() : new Promise(function (res, rej) { var sc = document.createElement('script'); sc.src = SHPJS_URL; sc.onload = res; sc.onerror = function () { rej(new Error('could not load the shapefile reader')); }; document.head.appendChild(sc); }); }
-  function readShapefiles(files) {                            // zip(s) or loose .shp/.shx/.dbf/.prj -> [FeatureCollection] in lon/lat
-    return loadShpjs().then(function () {
-      var list = Array.prototype.slice.call(files); var zips = list.filter(function (f) { return /\.zip$/i.test(f.name); });
-      if (zips.length) return Promise.all(zips.map(function (f) { return f.arrayBuffer().then(function (b) { return window.shp(b); }); })).then(function (r) { return [].concat.apply([], r.map(function (x) { return Array.isArray(x) ? x : [x]; })); });
-      var byBase = {};
-      list.forEach(function (f) { var m = f.name.match(/^(.*)\.(shp|shx|dbf|prj|cpg)$/i); if (m) (byBase[m[1]] = byBase[m[1]] || {})[m[2].toLowerCase()] = f; });
-      var bases = Object.keys(byBase).filter(function (b) { return byBase[b].shp; });
-      if (!bases.length) throw new Error('no .shp file found: select the .shp, .shx, .dbf and .prj files together, or a .zip of them');
-      return Promise.all(bases.map(function (b) {
-        var set = byBase[b];
-        return Promise.all([set.shp.arrayBuffer(), set.dbf ? set.dbf.arrayBuffer() : null, set.prj ? set.prj.text() : null]).then(function (r) {
-          var geo = window.shp.parseShp(r[0], r[2] || undefined); var attrs = r[1] ? window.shp.parseDbf(r[1], null) : null;
-          return window.shp.combine([geo, attrs || geo.map(function () { return {}; })]);
-        }).then(function (fc) { fc.fileName = b; return fc; });
-      }));
-    });
-  }
+  // Site upload: GeoJSON or shapefile features become sites (shared window in core: coordinate conversion, name and date columns)
   function uploadMethodUI(m) {
     var c = rui.method; var shp = m === 'Shapefile Upload';
     c.appendChild(el('div', 'pv-small', shp ? 'Upload a shapefile of your restoration sites (a .zip, or the .shp, .shx, .dbf and .prj files together).' : 'Upload a GeoJSON file of your restoration sites.'));
-    c.appendChild(el('div', 'pv-grey', 'Every point, line and polygon in the file becomes a site, just like drawing it. Properties "name" and "date" (restoration date) are used when present. Nothing is uploaded anywhere: the file stays in your browser and is forgotten when you leave the page.'));
-    var ob = button(shp ? 'Open shapefile window' : 'Open GeoJSON window', function () { uploadDialog(m); }); ob.style.width = '200px'; c.appendChild(ob);
+    c.appendChild(el('div', 'pv-grey', 'Every point, line and polygon in the file becomes a site, just like drawing it. A name column (name, site, id, ...) and a date column (date, start, restored, year, ...) are used when present. Nothing is uploaded anywhere: the file stays in your browser and is forgotten when you leave the page.'));
+    var ob = button(shp ? 'Open shapefile window' : 'Open GeoJSON window', function () { openUpload(m); }); ob.style.width = '200px'; c.appendChild(ob);
     var cl = button('Clear uploaded sites', function () { removeByMethod(m); }); cl.style.width = '200px'; c.appendChild(cl);
-    uploadDialog(m);
+    openUpload(m);
   }
-  function uploadDialog(m) {
-    var shp = m === 'Shapefile Upload';
-    var ov = el('div', 'pv-overlay'); var box = el('div', 'pv-dialog'); box.style.width = 'min(520px, 92vw)'; ov.appendChild(box);
-    var x = el('button', 'pv-dialog-x', '×'); x.setAttribute('aria-label', 'Close'); box.appendChild(x);
-    box.appendChild(el('div', 'pv-dialog-h', shp ? 'Shapefile Upload' : 'GeoJSON Upload'));
-    box.appendChild(el('div', 'pv-small', shp ? 'Drop a .zip of the shapefile here, or the .shp, .shx, .dbf and .prj files together.' : 'Drop a .geojson or .json file here.'));
-    var zone = el('div', '', shp ? 'Drag the shapefile here' : 'Drag the GeoJSON file here'); zone.style.cssText = 'margin:12px 0 8px;padding:34px 10px;border:2px dashed #b0bec5;border-radius:10px;background:#f7f9fb;text-align:center;color:#607d8b;font-size:14px;cursor:pointer';
-    box.appendChild(zone);
-    var inp = el('input'); inp.type = 'file'; inp.style.display = 'none'; inp.accept = shp ? '.zip,.shp,.shx,.dbf,.prj,.cpg' : '.geojson,.json,application/geo+json,application/json'; if (shp) inp.multiple = true; box.appendChild(inp);
-    var pick = button(shp ? 'Choose file(s)...' : 'Choose file...', function () { inp.click(); }); pick.style.width = '160px'; box.appendChild(pick);
-    var crsRow = el('div', 'pv-small'); crsRow.style.marginTop = '8px'; box.appendChild(crsRow);
-    var status = el('div', 'pv-small'); status.style.cssText = 'margin-top:8px;min-height:18px'; box.appendChild(status);
-    var addBtn = button('Add sites to the report', function () { commit(); }); addBtn.style.cssText = 'width:200px;display:none'; box.appendChild(addBtn);
-    var pending = null, gjText = null, crsSel = null;
-    function close() { ov.remove(); }
-    x.addEventListener('click', close); ov.addEventListener('click', function (e) { if (e.target === ov) close(); });
-    zone.addEventListener('click', function () { inp.click(); });
-    ['dragenter', 'dragover'].forEach(function (t) { zone.addEventListener(t, function (e) { e.preventDefault(); e.stopPropagation(); zone.style.background = '#e3f2fd'; }); });
-    ['dragleave', 'drop'].forEach(function (t) { zone.addEventListener(t, function (e) { e.preventDefault(); e.stopPropagation(); zone.style.background = '#f7f9fb'; }); });
-    zone.addEventListener('drop', function (e) { if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) ingest(e.dataTransfer.files); });
-    inp.addEventListener('change', function () { if (inp.files && inp.files.length) ingest(inp.files); });
-    function fail(msg) { status.textContent = msg; status.style.color = '#c00'; addBtn.style.display = 'none'; pending = null; }
-    function summarize(sites, how) {
-      var n = { Point: 0, LineString: 0, Polygon: 0 }; sites.forEach(function (s) { n[s.type]++; });
-      var txt = sites.length + ' site' + (sites.length === 1 ? '' : 's') + ' found: ' + n.Point + ' point' + (n.Point === 1 ? '' : 's') + ', ' + n.LineString + ' line' + (n.LineString === 1 ? '' : 's') + ', ' + n.Polygon + ' polygon' + (n.Polygon === 1 ? '' : 's') + (how ? '. ' + how : '') + (sites.length > 25 ? '. Only the first 25 will be added (the report uses 25 colours).' : '') + (inRegion(sites) ? '' : ' WARNING: the sites fall outside New England; check the coordinate system.');
-      status.textContent = txt; status.style.color = inRegion(sites) ? '#2e7d32' : '#e65100'; pending = sites; addBtn.style.display = sites.length ? 'inline-block' : 'none';
-    }
-    function parseGeo(code, how) {
-      try { var gj = JSON.parse(gjText); } catch (e) { return fail('That file is not valid JSON: ' + e.message); }
-      var sites = sitesFromGeoJSON(gj, code);
-      if (!sites.length) return fail('No points, lines or polygons were found in the file.');
-      summarize(sites, 'Coordinates read as ' + crsLabel(code) + ' (' + how + ').');
-    }
-    function ingest(files) {
-      status.style.color = '#555'; status.textContent = 'Reading...'; addBtn.style.display = 'none'; crsRow.innerHTML = '';
-      if (shp) {
-        readShapefiles(files).then(function (fcs) {
-          var sites = []; fcs.forEach(function (fc) { sites = sites.concat(sitesFromGeoJSON(fc, 'EPSG:4326')); });
-          if (!sites.length) return fail('No points, lines or polygons were found in the shapefile.');
-          summarize(sites, 'Coordinates converted from the shapefile’s .prj' + (fcs.length > 1 ? ' (' + fcs.length + ' layers)' : '') + '.');
-        }).catch(function (e) { fail('Could not read the shapefile: ' + (e && e.message || e)); });
-        return;
-      }
-      var f = files[0]; f.text().then(function (t) {
-        gjText = t; var gj; try { gj = JSON.parse(t); } catch (e) { return fail('That file is not valid JSON: ' + e.message); }
-        var det = detectCrs(gj);
-        crsRow.innerHTML = ''; crsRow.appendChild(document.createTextNode('Coordinate system: ')); crsSel = MM.select(UPLOAD_CRS.map(function (c) { return [c[1], c[0]]; }), det.code, '300px'); crsRow.appendChild(crsSel);
-        crsRow.appendChild(el('span', 'pv-grey', ' detected from the ' + det.how + '; change it if the sites land in the wrong place.'));
-        crsSel.addEventListener('change', function () { parseGeo(crsSel.value, 'your choice'); });
-        parseGeo(det.code, det.how);
-      }).catch(function (e) { fail('Could not read the file: ' + (e && e.message || e)); });
-    }
-    function commit() {
-      if (!pending || !pending.length) return; removeByMethod(m); var added = [];
-      pending.slice(0, 25).forEach(function (s) { added.push(addSite(s.geometry, s.type, nextColor(), s.date, s.name, m)); });
-      try { var b = null; added.forEach(function (s) { var bb = MM.featureBbox({ geometry: s.geometry }); b = b ? [Math.min(b[0], bb[0]), Math.min(b[1], bb[1]), Math.max(b[2], bb[2]), Math.max(b[3], bb[3])] : bb.slice(); });
-        if (b) map.fitBounds([[b[1], b[0]], [b[3], b[2]]], { padding: [30, 30], maxZoom: 15 }); } catch (e) {}
-      close();
-    }
-    document.body.appendChild(ov);
+  function openUpload(m) {
+    MM.uploadDialog({ kind: m === 'Shapefile Upload' ? 'shapefile' : 'geojson', title: m, addLabel: 'Add sites to the report', max: 25, onSites: function (sites) {
+      removeByMethod(m); var added = sites.map(function (s) { return addSite(s.geometry, s.type, nextColor(), s.date, s.name, m); });
+      MM.fitToGeometries(added.map(function (s) { return s.geometry; }), 15);
+    } });
   }
   function regression(pts) { var n = pts.length; if (n < 2) return { slope: null, intercept: null, count: n, minX: null, maxX: null }; var sx = 0, sy = 0, sxx = 0, sxy = 0; pts.forEach(function (p) { sx += p.x; sy += p.y; sxx += p.x * p.x; sxy += p.x * p.y; }); var den = n * sxx - sx * sx; if (Math.abs(den) < 1e-10) return { slope: null, intercept: null, count: n, minX: pts[0].x, maxX: pts[n - 1].x }; var slope = (n * sxy - sx * sy) / den; return { slope: slope, intercept: (sy - slope * sx) / n, count: n, minX: pts[0].x, maxX: pts[n - 1].x }; }
   function siteSeries(site) {
-    var g = site.geometry; var idx = S.opts.index, sensor = S.opts.satellite;   // the satellite and index chosen in "Select Satellite and Index"
+    var g = site.geometry;
     if (site.isPool) return MM.featureSeries({ geometry: g, properties: site.poolProps }, true).then(function (r) { return r.pts; });
     if (site.isDitch) return MM.ditchSeries({ geometry: g }).then(function (r) { return r.pts; });
-    function pts(r) { return r && r.pts ? r.pts : []; }
-    function centroidPixel() { var b = MM.featureBbox({ geometry: g }); return MM.pixelSeries((b[0] + b[2]) / 2, (b[1] + b[3]) / 2, idx, sensor).then(pts); }   // nearest marsh pixel to the centre (within 2 px)
-    return MM.cubeReady().then(function () {
-      if (g.type === 'Point') return MM.pixelSeries(g.coordinates[0], g.coordinates[1], idx, sensor).then(pts);
-      var c = MM.cube(sensor), byBlock = {};
-      if (g.type === 'LineString') {                            // sampled along the line, like ditches, on this satellite's grid
-        var have = {}; Object.keys(c.index).forEach(function (t) { have[t] = {}; (c.index[t].blocks || []).forEach(function (bb) { have[t][bb[0] + '_' + bb[1]] = 1; }); });
-        var step = Math.max(5, c.res / 3), seen = {}; var utm = g.coordinates.map(function (q) { return MM.toUtm(q[0], q[1]); });
-        for (var i = 0; i < utm.length; i++) {
-          var n = i < utm.length - 1 ? Math.max(1, Math.floor(Math.hypot(utm[i + 1][0] - utm[i][0], utm[i + 1][1] - utm[i][1]) / step)) : 0;
-          for (var j = 0; j <= n; j++) {
-            var E = utm[i][0], N = utm[i][1]; if (n) { E += (utm[i + 1][0] - utm[i][0]) * j / n; N += (utm[i + 1][1] - utm[i][1]) * j / n; }
-            var loc = MM.cubeLocateUtm(E, N, sensor); var k = loc.tile + ':' + loc.row + ':' + loc.col; if (seen[k]) continue; seen[k] = 1;
-            if (!have[loc.tile] || !have[loc.tile][Math.floor(loc.row / 8) + '_' + Math.floor(loc.col / 8)]) continue;
-            (byBlock[loc.block] = byBlock[loc.block] || []).push({ row: loc.row, col: loc.col });
-          }
-        }
-      } else { var gm = MM.gridMask(MM.ringsOf(g), null, c.res); byBlock = MM.cubePixelsInMask(gm, sensor).byBlock; }
-      if (!Object.keys(byBlock).length) return centroidPixel();
-      return MM.meanSeries(byBlock, idx, null, sensor).then(function (r) { return r && r.pts && r.pts.length ? r.pts : centroidPixel(); });
-    });
+    return MM.geometrySeries(g, { sensor: S.opts.satellite, index: S.opts.index }).then(function (r) { return r.pts; });   // the satellite and index chosen in "Select Satellite and Index"
   }
   function restorationChartSVG(site, W, H) {
     var ts = site.timeSeries; if (!ts.length) return '<p style="color:#999; font-style:italic;">No time series data available</p>';
