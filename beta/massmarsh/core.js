@@ -31,6 +31,7 @@ window.MM = (function () {
   var MULTI_COLORS = ['#e41a1c', '#377eb8', '#4daf4a', '#984ea3', '#ff7f00', '#a65628', '#f781bf', '#999999'];
   var SEG_COLORS = ['#1565C0', '#4CAF50', '#FF9800', '#9C27B0', '#00BCD4'];
   var SEG_TREND = ['#0D47A1', '#2E7D32', '#E65100', '#6A1B9A', '#00838F'];
+  var SITE_COLORS = ['#FF0000', '#00FF00', '#0000FF', '#FF00FF', '#00FFFF', '#FFA500', '#800080', '#008000', '#000080', '#FF4500', '#2E8B57', '#DC143C', '#4B0082', '#FF1493', '#00CED1', '#FFD700', '#8B4513', '#20B2AA', '#FF6347', '#7B68EE', '#3CB371', '#B22222', '#9932CC', '#FF8C00', '#6B8E23'];   // one colour per site / uploaded feature (restoration report, Data Viewer)
   var SEASONS = { all: { key: 'all', label: 'Entire year', word: '' }, summer: { key: 'summer', label: 'Summer (Jun-Aug)', word: ', Jun-Aug' } };
   var CITATIONS = {
     units: 'Marsh unit data: Ackerman, K.V., Defne, Z., and Ganju, N.K. (2021). Geospatial Characterization of Salt Marshes for Massachusetts (Conceptual marsh units of Massachusetts salt marshes). U.S. Geological Survey data release, https://doi.org/10.5066/P97E086F',
@@ -1447,7 +1448,7 @@ window.MM = (function () {
   return {
     S: S, map: map, canvas: canvas, layers: layers, tools: tools, registerTool: registerTool, startTool: startTool, switchTo: switchTo, boot: boot,
     EPOCH_MS: EPOCH_MS, DAY_MS: DAY_MS, YEAR_MS: YEAR_MS, START_YEAR: START_YEAR, MIN_FIT_OBS: MIN_FIT_OBS,
-    PALETTES: PALETTES, LABELS: LABELS, MULTI_COLORS: MULTI_COLORS, SEG_COLORS: SEG_COLORS, SEG_TREND: SEG_TREND, SEASONS: SEASONS, CITATIONS: CITATIONS, DATA: DATA,
+    PALETTES: PALETTES, LABELS: LABELS, MULTI_COLORS: MULTI_COLORS, SITE_COLORS: SITE_COLORS, SEG_COLORS: SEG_COLORS, SEG_TREND: SEG_TREND, SEASONS: SEASONS, CITATIONS: CITATIONS, DATA: DATA,
     load: load, getJSON: getJSON, loadShard: loadShard, loadPoolSeries: loadPoolSeries, loadComplexSeries: loadComplexSeries, loadUnitSeries: loadUnitSeries, withTimeout: withTimeout, serverReady: serverReady, serverUrl: serverUrl,
     el: el, add: add, clearSide: clearSide, titlePanel: titlePanel, thin: thin, button: button, setStatus: setStatus, fmtDate: fmtDate, todayStr: todayStr, labelWithInfo: labelWithInfo, citation: citation, slider: slider, select: select, backButton: backButton, side: side,
     ringsOf: ringsOf, pointInRing: pointInRing, pointInPolys: pointInPolys, bboxOf: bboxOf, bboxIntersects: bboxIntersects, featureBbox: featureBbox, eachCoord: eachCoord, featureTouchesPolys: featureTouchesPolys, toUtm: toUtm, fromUtm: fromUtm, geodesicM: geodesicM, polysToGeoJSON: polysToGeoJSON,

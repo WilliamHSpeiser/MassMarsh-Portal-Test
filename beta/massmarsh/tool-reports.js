@@ -471,9 +471,7 @@
         ? 'Before restoration: ' + fmtSlope(r.preSlope) + ' (' + r.preCount + ' scenes) \u00b7 after: ' + fmtSlope(r.postSlope) + ' (' + r.postCount + ' scenes)'
         : 'Trend: ' + fmtSlope(r.overallSlope) + ' over ' + r.overallCount + ' scenes';
       box.lastChild.outerHTML = restorationChartSVG(r, 350, 190) + '<div style="margin-top:4px;color:#444">' + txt + '</div>';
-      var sw = document.createElement('div'); sw.className = 'pv-swipe'; sw.style.marginTop = '6px'; box.appendChild(sw);   // live view: earliest colour image vs latest, like the pool / raster / ditch viewers
-      MM.imagerySwipe(sw, { geometry: site.geometry, name: displayName(site), pad: site.type === 'Point' ? 60 : 30, minBox: 120 });
-      pop.update(); setTimeout(function () { if (Rz.popup === pop) pop.update(); }, 2500);
+      pop.update();
     }).catch(function (e) { box.lastChild.textContent = 'Time series failed: ' + e.message; box.lastChild.style.color = '#c00'; });
   }
   function removeByMethod(m) { for (var i = Rz.sites.length - 1; i >= 0; i--) if (Rz.sites[i].method === m) removeSite(i); }

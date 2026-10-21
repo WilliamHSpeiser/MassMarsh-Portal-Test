@@ -26,12 +26,13 @@
 
   // ---------- Step 2: add a file ----------
   function showAddFile() {
-    clearTool(); MM.clearSide(); MM.titlePanel('Data Viewer', 'beta'); MM.addSwitcher('data_viewer'); S.activeTool = 'data_viewer';
+    clearTool(); MM.clearSide(); MM.titlePanel('Data Viewer', 'beta'); MM.addSwitcher('data_viewer'); S.activeTool = 'data_viewer'; V.coloured = false;
     add(el('div', 'pv-step', 'Step 2: Add Your File'));
     add(el('div', 'pv-small', 'Add a GeoJSON file or a shapefile of your own features (points, lines or polygons).'));
     var sp = add(el('div')); sp.style.height = '8px';
-    add(el('div', 'pv-small', 'Features outside the selected area are cropped; the others keep only the pixels inside it for their statistics.'));
-    add(el('div', 'pv-grey', 'A name column (name, site, id, ...) labels each feature on the map; a date column (date, start, restored, year, ...) splits its time series at that date. Nothing is uploaded anywhere: the file stays in your browser and is forgotten when you leave the page.'));
+    add(el('div', 'pv-small', 'Features outside the selected area are cropped. If no features are within your selected area, you will not move past this step.'));
+    var sp2 = add(el('div')); sp2.style.height = '8px';
+    add(el('div', 'pv-grey', 'Nothing is uploaded anywhere: the file stays in your browser and is forgotten when you leave the page.'));
     var ab = add(button('Add File', openUpload)); ab.style.width = '160px';
     ui.fileStatus = add(el('div')); thin();
     ui.next = add(button('Next: Satellite and Index →', function () { S.step = 3; showSettings(); })); ui.next.style.width = '230px';
@@ -97,7 +98,14 @@
   }
 
   // ---------- map layers ----------
+  function siteColor(f) { return MM.SITE_COLORS[(f.id - 1) % MM.SITE_COLORS.length]; }
   function styleFor(f) {
+    if (!V.coloured) {                                        // before Initiate: one colour per feature, like the restoration report's sites
+      var sc = siteColor(f);
+      if (f.type === 'Point') return { radius: 6, color: sc, weight: 2, fillColor: sc, fillOpacity: 1 };
+      if (f.type === 'LineString') return { color: sc, weight: 3, opacity: 1 };
+      return { color: sc, weight: 2, fillColor: sc, fillOpacity: 0.27 };
+    }
     var has = f.slope !== null && f.slope !== undefined; var col = has ? MM.rampColor(f.slope, palette(), V.colorMin, V.colorMax) : '#888888';
     if (f.type === 'Point') return { radius: 6, color: '#000000', weight: 1, fillColor: col, fillOpacity: 0.9 };
     if (f.type === 'LineString') return { color: col, weight: 4, opacity: 1 };
@@ -116,11 +124,11 @@
       }
     });
   }
-  function setOpacity(v) { V.feats.forEach(function (f) { var l = MM.layers.tool['dv:' + f.id]; if (l && l.setStyle) l.setStyle(f.type === 'LineString' ? { opacity: v } : { opacity: v, fillOpacity: v * (f.type === 'Point' ? 0.9 : 0.6) }); }); }
+  function setOpacity(v) { V.feats.forEach(function (f) { var l = MM.layers.tool['dv:' + f.id]; if (l && l.setStyle) l.setStyle(f.type === 'LineString' ? { opacity: v } : { opacity: v, fillOpacity: v * (f.type === 'Point' ? 0.9 : (V.coloured ? 0.6 : 0.27)) }); }); }
 
   // ---------- Step 3: settings ----------
   function showSettings() {
-    clearTool(); MM.clearSide(); MM.titlePanel('Data Viewer', 'beta'); MM.addSwitcher('data_viewer');
+    clearTool(); MM.clearSide(); MM.titlePanel('Data Viewer', 'beta'); MM.addSwitcher('data_viewer'); V.coloured = false;
     add(el('div', 'pv-step', 'Step 3: Select Satellite, Index and Season'));
     add(el('div', 'pv-h lg', 'Configure Analysis Settings:'));
     add(el('div', 'pv-p', 'Satellite:')); var satSel = add(MM.select([['Landsat (30m, 1984-Current)', 'Landsat'], ['Sentinel-2 (20m, 2015-Current)', 'Sentinel-2', true]], S.opts.satellite, '280px'));
@@ -156,7 +164,7 @@
   }
   function seriesFor(f) { return MM.withTimeout(MM.geometrySeries(f.geometry, { sensor: S.opts.satellite, index: S.opts.index, clipPolys: selectionClip(), clipFn: inSel }), 60000); }
   function computeAll() {
-    var req = ++V.reqId, done = 0; drawFeatures(featureClick);
+    var req = ++V.reqId, done = 0; V.coloured = false; drawFeatures(featureClick);
     var chain = Promise.resolve();
     V.feats.forEach(function (f) {
       chain = chain.then(function () {
@@ -170,7 +178,7 @@
       if (req !== V.reqId) return;
       var slopes = V.feats.map(function (f) { return f.slope; }).filter(function (v) { return v !== null; });
       var m = slopes.length ? Math.max(Math.abs(MM.percentile(slopes, 0.02)), Math.abs(MM.percentile(slopes, 0.98))) : DEFAULT_RANGE; if (!isFinite(m) || m === 0) m = DEFAULT_RANGE; V.colorMin = -m; V.colorMax = m;
-      drawFeatures(featureClick);
+      V.coloured = true; drawFeatures(featureClick);
       setStatus(ui.status, V.feats.length + ' features, ' + slopes.length + ' with a trajectory' + (slopes.length < V.feats.length ? ' (grey = too few scenes)' : ''), 'green'); ui.prompt.style.display = '';
       if (slopes.length) MM.legendBlock(ui.legend, palette(), V.colorMin, V.colorMax, idxLabels()); else ui.legend.innerHTML = '';
     });
