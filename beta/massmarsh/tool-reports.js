@@ -272,25 +272,88 @@
   function progressPanel(title) { MM.clearSide(); MM.titlePanel('Remote Sensing Portal'); add(el('div', 'pv-h lg', title)); var log = add(el('div')); return function (msg, err) { var d = el('div', 'pv-small', msg); if (err) d.style.color = '#c00'; log.appendChild(d); }; }
   // the report is delivered as HTML plus the browser print view (PDF via "Save as PDF"), identical layouts
   // the PDF is the browser's own print rendering of the HTML report (identical layout), saved with "Save as PDF"
-  var PRINT_CSS = '@page{size:letter;margin:12mm}@media print{body{max-width:none!important;padding:0!important}.map-container,table,svg,img,div[style*="page-break-inside"]{page-break-inside:avoid;break-inside:avoid}h1,h2,h3{page-break-after:avoid;break-after:avoid}img{max-width:100%!important}}';
-  // Downloaded file names: MassMarsh_[ReportType]_[MonYYYY]_[HHMM] (.html, and the print window title so "Save as PDF" suggests the same .pdf name)
+  // PDF download: the report HTML is rendered off-screen at its own width (900 px, exactly the HTML file), rasterised
+  // page by page (html2canvas + jsPDF, fetched on first use) and saved as MassMarsh_<Type>_<MonYYYY>_<HHMM>.pdf. No print
+  // dialog, and everything the HTML shows (colour bars, charts, map images) is in the file. Pages are cut between blocks,
+  // never through a map, table, chart or image unless the block is taller than a page.
+  var PDF_LIBS = ['https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js', 'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js'];
+  var PDF_W = 900, PDF_PAGE = { w: 8.5, h: 11, m: 0.5 };                       // letter, 0.5 in margins
+  function loadScript(src) { return new Promise(function (res, rej) { if (document.querySelector('script[src="' + src + '"]')) return res(); var sc = document.createElement('script'); sc.src = src; sc.onload = res; sc.onerror = function () { rej(new Error('could not load ' + src)); }; document.head.appendChild(sc); }); }
+  function pdfLibs() { return (window.html2canvas && window.jspdf) ? Promise.resolve() : Promise.all(PDF_LIBS.map(loadScript)); }
+  function renderFrame(html) {
+    var fr = document.createElement('iframe'); fr.setAttribute('aria-hidden', 'true'); fr.style.cssText = 'position:fixed;left:-30000px;top:0;width:' + PDF_W + 'px;height:1200px;border:0;visibility:hidden;pointer-events:none';
+    document.body.appendChild(fr);
+    return new Promise(function (resolve) {
+      var done = false; function go() { if (!done) { done = true; resolve(fr); } }
+      fr.onload = go; setTimeout(go, 5000);
+      fr.srcdoc = html.replace('</style>', 'html,body{background:#fff}body{max-width:none!important;width:' + (PDF_W - 40) + 'px;margin:0!important;padding:20px!important}img{max-width:100%}</style>');
+    }).then(function () {
+      var doc = fr.contentDocument;
+      var waits = Array.prototype.slice.call(doc.images).map(function (im) { return im.complete ? null : new Promise(function (r) { im.onload = im.onerror = r; }); });
+      if (doc.fonts && doc.fonts.ready) waits.push(doc.fonts.ready);
+      return Promise.all(waits).then(function () { fr.style.height = Math.max(1200, doc.documentElement.scrollHeight + 40) + 'px'; return fr; });
+    });
+  }
+  function pageCuts(doc, pageH) {
+    // document-relative rectangles (the frame is never scrolled)
+    function rect(e) { var r = e.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, h: r.height }; }
+    var sel = Array.prototype.slice.call(doc.querySelectorAll('.map-container, table, svg, img, canvas, div[style*="page-break-inside"], .legend-bar, .legend-bar-pool, h1, h2, h3'));
+    var atomic = sel.map(rect).filter(function (r) { return r.h > 0; });
+    var heads = Array.prototype.slice.call(doc.querySelectorAll('h1, h2, h3')).map(rect);
+    var blocks = Array.prototype.slice.call(doc.querySelectorAll('body > *, body > * > *, body > * > * > *')).map(rect).filter(function (r) { return r.h > 0; });
+    var H = doc.documentElement.scrollHeight, cuts = [], y = 0, guard = 0;
+    while (y < H - 2 && guard++ < 500) {
+      var end = Math.min(y + pageH, H);
+      if (end < H) {
+        var cands = [];
+        blocks.concat(atomic).forEach(function (r) { if (r.bottom > y + pageH * 0.3 && r.bottom <= end) cands.push(r.bottom); if (r.top > y + pageH * 0.3 && r.top <= end) cands.push(r.top); });
+        cands.sort(function (p, q) { return q - p; });
+        var pick = null;
+        for (var i = 0; i < cands.length && pick === null; i++) {
+          var c = cands[i], bad = false;
+          for (var j = 0; j < atomic.length && !bad; j++) if (atomic[j].top < c - 1 && atomic[j].bottom > c + 1 && atomic[j].h <= pageH) bad = true;   // would cut through a block that fits a page
+          for (var k = 0; k < heads.length && !bad; k++) if (Math.abs(heads[k].bottom - c) < 3) { c = heads[k].top; if (c <= y + 40) bad = true; }      // never leave a heading at the foot of a page
+          if (!bad) pick = c;
+        }
+        end = pick !== null ? pick : end;
+      }
+      cuts.push([y, end]); y = end;
+    }
+    return cuts;
+  }
+  function htmlToPdf(html, base, status) {
+    var fr;
+    return pdfLibs().then(function () { return renderFrame(html); }).then(function (f) {
+      fr = f; var doc = fr.contentDocument; var inPerPx = (PDF_PAGE.w - 2 * PDF_PAGE.m) / PDF_W; var pageH = Math.floor((PDF_PAGE.h - 2 * PDF_PAGE.m) / inPerPx);
+      var cuts = pageCuts(doc, pageH); var pdf = new window.jspdf.jsPDF({ unit: 'in', format: 'letter', orientation: 'portrait', compress: true });
+      var scale = Math.min(2, Math.max(1.5, 3000 / PDF_W));
+      return cuts.reduce(function (chain, cut, i) {
+        return chain.then(function () {
+          if (status) status('Preparing PDF: page ' + (i + 1) + ' of ' + cuts.length + '...');
+          return window.html2canvas(doc.body, { scale: scale, backgroundColor: '#ffffff', useCORS: true, logging: false, width: PDF_W, height: cut[1] - cut[0], x: 0, y: cut[0], scrollX: 0, scrollY: 0, windowWidth: PDF_W, windowHeight: Math.max(1200, cut[1] - cut[0]) })
+            .then(function (cv) { if (i > 0) pdf.addPage(); pdf.addImage(cv.toDataURL('image/jpeg', 0.92), 'JPEG', PDF_PAGE.m, PDF_PAGE.m, PDF_PAGE.w - 2 * PDF_PAGE.m, (cut[1] - cut[0]) * inPerPx, undefined, 'FAST'); });
+        });
+      }, Promise.resolve()).then(function () { pdf.setProperties({ title: base, creator: 'MassMarsh Viewer' }); return pdf; });
+    }).then(function (pdf) { if (fr) fr.remove(); return pdf; }, function (err) { if (fr) fr.remove(); throw err; });
+  }
+  // Downloaded file names: MassMarsh_[ReportType]_[MonYYYY]_[HHMM].pdf / .html
   function reportFileBase(kind) { var d = new Date(), mon = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getMonth()]; return 'MassMarsh_' + kind + '_' + mon + d.getFullYear() + '_' + ('0' + d.getHours()).slice(-2) + ('0' + d.getMinutes()).slice(-2); }
   function deliver(html, kind) {
-    var base = reportFileBase(kind), filename = base + '.html', title = base;
+    var base = reportFileBase(kind), filename = base + '.html';
     MM.clearSide(); MM.titlePanel('Remote Sensing Portal'); var ok = add(el('div', '', 'Report Generated!')); ok.style.cssText = 'font-size:16px;font-weight:bold;color:green'; var d = add(el('div', 'pv-thin')); d.style.background = '#881c1c';
-    add(el('div', 'pv-h lg', 'Download Report')); var links = add(el('div')); var note = el('div', 'pv-note');
-    var printable = html.replace('</style>', PRINT_CSS + '</style>');
+    add(el('div', 'pv-h lg', 'Download Report')); var links = add(el('div')); var note = el('div', 'pv-note'); var busy = false;
     var a = el('a', 'dl', '⬇ Download Report PDF'); a.href = '#'; a.style.display = 'block';
     a.addEventListener('click', function (e) {
-      e.preventDefault(); var w = window.open('', '_blank');
-      if (!w) { note.textContent = 'Pop-up blocked: allow pop-ups for this site and click the PDF link again.'; note.style.color = '#c00'; return; }
-      w.document.open(); w.document.write(printable); w.document.close(); w.document.title = title;
-      setTimeout(function () { try { w.focus(); w.print(); } catch (err) {} }, 900);
+      e.preventDefault(); if (busy) return; busy = true; note.style.color = ''; note.textContent = 'Preparing PDF...';
+      htmlToPdf(html, base, function (t) { note.textContent = t; }).then(function (pdf) {
+        busy = false; note.textContent = 'PDF saved as ' + base + '.pdf';
+        if (window.MM_PDF_PREVIEW) window.open(pdf.output('bloburl'), '_blank'); else pdf.save(base + '.pdf');
+      }).catch(function (err) { busy = false; note.style.color = '#c00'; note.textContent = 'The PDF could not be generated (' + (err && err.message || err) + '). The HTML version below has the full report.'; });
     });
     links.appendChild(a);
     var h = el('a', 'dl', '⬇ Download Report HTML'); h.href = URL.createObjectURL(new Blob([html], { type: 'text/html' })); h.download = filename; h.style.display = 'block'; links.appendChild(h);
-    note.textContent = 'The PDF link opens the report in the browser’s print view, laid out exactly like the HTML version: choose "Save as PDF" as the destination.'; add(note);
-    thin(); add(el('div', 'pv-note', 'Map images and charts are embedded in both versions; the files can be saved and shared.'));
+    add(note);
+    thin(); add(el('div', 'pv-note', 'Both files hold the complete report with its maps, colour bars and charts; they can be saved and shared.'));
     thin('light'); MM.backButton(MM.showLanding);
   }
   function reportFrame(title, w) {
