@@ -28,7 +28,9 @@
   function showAddFile() {
     clearTool(); MM.clearSide(); MM.titlePanel('Data Viewer', 'beta'); MM.addSwitcher('data_viewer'); S.activeTool = 'data_viewer';
     add(el('div', 'pv-step', 'Step 2: Add Your File'));
-    add(el('div', 'pv-small', 'Add a GeoJSON file or a shapefile of your own features (points, lines or polygons). Features outside the selected area are dropped; the others keep only the pixels inside it for their statistics.'));
+    add(el('div', 'pv-small', 'Add a GeoJSON file or a shapefile of your own features (points, lines or polygons).'));
+    var sp = add(el('div')); sp.style.height = '8px';
+    add(el('div', 'pv-small', 'Features outside the selected area are cropped; the others keep only the pixels inside it for their statistics.'));
     add(el('div', 'pv-grey', 'A name column (name, site, id, ...) labels each feature on the map; a date column (date, start, restored, year, ...) splits its time series at that date. Nothing is uploaded anywhere: the file stays in your browser and is forgotten when you leave the page.'));
     var ab = add(button('Add File', openUpload)); ab.style.width = '160px';
     ui.fileStatus = add(el('div')); thin();
