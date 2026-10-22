@@ -90,25 +90,48 @@
     s += '<text x="' + (mL + iw / 2) + '" y="' + (H - 5) + '" font-size="10" text-anchor="middle">Year</text><text transform="translate(12,' + (mT + ih / 2) + ') rotate(-90)" font-size="9" text-anchor="middle">' + esc(yTitle) + '</text></svg>';
     return s;
   }
-  var NBINS = 30, BIN_W = 0.06 / NBINS;                     // every histogram: 30 bins of 0.002 over -0.03..0.03 (user request 2026-10-22)
-  function bins30(slopes) { var neg = new Array(NBINS).fill(0), pos = new Array(NBINS).fill(0); slopes.forEach(function (v) { if (v === null || v === undefined || !isFinite(v)) return; var b = Math.max(0, Math.min(NBINS - 1, Math.floor((v + 0.03) / BIN_W))); if (v < 0) neg[b]++; else pos[b]++; }); return { neg: neg, pos: pos, centres: neg.map(function (_, i) { return -0.03 + (i + 0.5) * BIN_W; }) }; }
+  // Histogram binning shared by the panel charts and the downloaded report (user request 2026-10-22): the axis follows the
+  // data (1st-99th percentile for 100+ values, min-max below that), always includes zero, zero is always a bin edge, the bin
+  // width is a round number, bins number 2*sqrt(n) clamped to 6..30, and values beyond the axis are counted in the end bins.
+  function niceStep(x) { if (!(x > 0)) return 0.001; var p = Math.pow(10, Math.floor(Math.log10(x))), r = x / p; return (r <= 1 ? 1 : r <= 2 ? 2 : r <= 2.5 ? 2.5 : r <= 5 ? 5 : 10) * p; }
+  function histBins(slopes) {
+    var v = slopes.filter(function (x) { return x !== null && x !== undefined && isFinite(x); }).sort(function (a, b) { return a - b; }); var n = v.length; if (!n) return null;
+    var pct = n >= 100; var lo = pct ? MM.percentile(v, 0.01) : v[0], hi = pct ? MM.percentile(v, 0.99) : v[n - 1];
+    lo = Math.min(lo, 0); hi = Math.max(hi, 0);
+    if (hi - lo < 0.004) { var c = (lo + hi) / 2; lo = Math.min(0, c - 0.002); hi = Math.max(0, c + 0.002); }
+    var nb = Math.max(6, Math.min(30, Math.round(2 * Math.sqrt(n)))), span = hi - lo;
+    var nNeg = Math.round(nb * (-lo) / span), nPos = nb - nNeg;
+    if (lo < 0 && nNeg === 0) { nNeg = 1; nPos = nb - 1; } if (hi > 0 && nPos === 0) { nPos = 1; nNeg = nb - 1; }
+    var w = +niceStep(Math.max(nNeg ? -lo / nNeg : 0, nPos ? hi / nPos : 0)).toFixed(10); lo = +(-nNeg * w).toFixed(10); hi = +(nPos * w).toFixed(10);   /* rounded: no float noise in labels */
+    var neg = new Array(nb).fill(0), pos = new Array(nb).fill(0), below = 0, above = 0;
+    v.forEach(function (x) { var b = Math.floor((x - lo) / w + 1e-9); if (b < 0) { b = 0; below++; } if (b >= nb) { b = nb - 1; above++; } if (x < 0) neg[b]++; else pos[b]++; });
+    var tick = niceStep(span / 6), ticks = []; for (var t = Math.ceil(lo / tick - 1e-9) * tick; t <= hi + 1e-9; t += tick) ticks.push(+t.toFixed(6));
+    return { neg: neg, pos: pos, centres: neg.map(function (_, i) { return lo + (i + 0.5) * w; }), lo: lo, hi: hi, width: w, n: n, nb: nb, below: below, above: above, pct: pct, ticks: ticks };
+  }
+  function histNote(b) {                                      // one line under the chart: what the axis covers and where the outliers went
+    var out = (b.below + b.above); return (b.pct ? 'Axis spans the 1st to 99th percentile of ' + b.n + ' values' : 'Axis spans all ' + b.n + ' values') + (out ? '; ' + out + ' beyond it ' + (out === 1 ? 'is' : 'are') + ' counted in the end bar' + (out === 1 ? '' : 's') : '') + '. ' + b.nb + ' bins of ' + (+b.width.toFixed(6)) + '.';
+  }
+  function fmtTick(x) { return (+x.toFixed(5)).toString(); }
   function svgHistogram(slopes, title, W, H, colors, xLabel) {
-    var valid = slopes.filter(function (v) { return v !== null && v !== undefined && isFinite(v); }); if (!valid.length) return '';
-    var b = bins30(valid); var counts = b.centres.map(function (_, i) { return b.neg[i] + b.pos[i]; }); var maxC = Math.max.apply(null, counts) || 1; var mT = 30, mR = 20, mB = 50, mL = 60, iw = W - mL - mR, ih = H - mT - mB; var bw = iw / NBINS - 1;
+    var b = histBins(slopes); if (!b) return '';
+    var counts = b.centres.map(function (_, i) { return b.neg[i] + b.pos[i]; }); var maxC = Math.max.apply(null, counts) || 1; var mT = 30, mR = 20, mB = 62, mL = 60, iw = W - mL - mR, ih = H - mT - mB; var bw = iw / b.nb - 1;
+    function px(x) { return mL + (x - b.lo) / (b.hi - b.lo) * iw; }
     var s = '<svg width="' + W + '" height="' + H + '" xmlns="http://www.w3.org/2000/svg" style="background:#f9f9f9;border:1px solid #ddd"><text x="' + (W / 2) + '" y="20" font-size="12" font-weight="bold" text-anchor="middle">' + esc(title) + '</text>';
     var ystep = Math.ceil(maxC / 5); for (var yv = 0; yv <= maxC; yv += ystep) { var y = mT + ih - yv / maxC * ih; s += '<line x1="' + mL + '" y1="' + y + '" x2="' + (mL + iw) + '" y2="' + y + '" stroke="#eee"/><text x="' + (mL - 5) + '" y="' + (y + 3) + '" font-size="9" text-anchor="end">' + yv + '</text>'; }
-    counts.forEach(function (c, i) { if (!c) return; var h = c / maxC * ih; s += '<rect x="' + (mL + i * iw / NBINS) + '" y="' + (mT + ih - h) + '" width="' + bw + '" height="' + h + '" fill="' + (b.centres[i] < 0 ? colors.negative : colors.positive) + '"/>'; });
-    [-0.03, -0.02, -0.01, 0, 0.01, 0.02, 0.03].forEach(function (x) { var px = mL + (x + 0.03) / 0.06 * iw; s += '<line x1="' + px + '" y1="' + (mT + ih) + '" x2="' + px + '" y2="' + (mT + ih + 4) + '" stroke="#333"/><text x="' + px + '" y="' + (mT + ih + 14) + '" font-size="9" text-anchor="middle">' + x.toFixed(2) + '</text>'; });
+    counts.forEach(function (c, i) { if (!c) return; var h = c / maxC * ih; s += '<rect x="' + (mL + i * iw / b.nb) + '" y="' + (mT + ih - h) + '" width="' + bw + '" height="' + h + '" fill="' + (b.centres[i] < 0 ? colors.negative : colors.positive) + '"/>'; });
+    b.ticks.forEach(function (x) { var tx = px(x); s += '<line x1="' + tx + '" y1="' + (mT + ih) + '" x2="' + tx + '" y2="' + (mT + ih + 4) + '" stroke="#333"/><text x="' + tx + '" y="' + (mT + ih + 14) + '" font-size="9" text-anchor="middle">' + fmtTick(x) + '</text>'; });
+    if (b.lo < 0 && b.hi > 0) s += '<line x1="' + px(0) + '" y1="' + mT + '" x2="' + px(0) + '" y2="' + (mT + ih) + '" stroke="#999" stroke-dasharray="3,3"/>';
     s += '<line x1="' + mL + '" y1="' + mT + '" x2="' + mL + '" y2="' + (mT + ih) + '" stroke="#333"/><line x1="' + mL + '" y1="' + (mT + ih) + '" x2="' + (mL + iw) + '" y2="' + (mT + ih) + '" stroke="#333"/>';
-    s += '<text x="' + (mL + iw / 2) + '" y="' + (H - 8) + '" font-size="10" text-anchor="middle">' + esc(xLabel) + '</text><text transform="translate(14,' + (mT + ih / 2) + ') rotate(-90)" font-size="10" text-anchor="middle">Count</text></svg>';
+    s += '<text x="' + (mL + iw / 2) + '" y="' + (H - 20) + '" font-size="10" text-anchor="middle">' + esc(xLabel) + '</text><text x="' + (mL + iw / 2) + '" y="' + (H - 7) + '" font-size="8" fill="#666" text-anchor="middle">' + esc(histNote(b)) + '</text><text transform="translate(14,' + (mT + ih / 2) + ') rotate(-90)" font-size="10" text-anchor="middle">Count</text></svg>';
     return s;
   }
-  function panelHistogram(container, slopes, title, xLabel, colors, labels) {   // labels: [negative, positive] legend texts (the wetter / drier counts live here)
-    var b = bins30(slopes); var ds = [{ label: labels ? labels[0] : words().neg, data: b.centres.map(function (c, i) { return { x: c, y: b.neg[i] }; }), backgroundColor: colors[0] }, { label: labels ? labels[1] : words().pos, data: b.centres.map(function (c, i) { return { x: c, y: b.pos[i] }; }), backgroundColor: colors[1] }];
-    container.innerHTML = ''; var wrap = el('div', 'pv-chart-wrap'); wrap.style.height = '180px'; var cv = el('canvas'); wrap.appendChild(cv); container.appendChild(wrap);
+  function panelHistogram(container, slopes, title, xLabel, colors, labels, yLabel) {   // labels: [negative, positive] legend texts (the wetter / drier counts live here)
+    var b = histBins(slopes); container.innerHTML = ''; if (!b) return;
+    var ds = [{ label: labels ? labels[0] : words().neg, data: b.centres.map(function (c, i) { return { x: c, y: b.neg[i] }; }), backgroundColor: colors[0] }, { label: labels ? labels[1] : words().pos, data: b.centres.map(function (c, i) { return { x: c, y: b.pos[i] }; }), backgroundColor: colors[1] }];
+    var wrap = el('div', 'pv-chart-wrap'); wrap.style.height = '190px'; var cv = el('canvas'); wrap.appendChild(cv); container.appendChild(wrap);
     if (container._chart) container._chart.destroy();
-    container._chart = new Chart(cv, { type: 'bar', data: { datasets: ds }, options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { display: true, position: 'top', align: 'end', labels: { boxWidth: 10, font: { size: 10 } } }, title: { display: true, text: title, font: { size: 11 } } },
-      scales: { x: { type: 'linear', min: -0.03, max: 0.03, stacked: true, title: { display: true, text: xLabel }, ticks: { font: { size: 9 } }, offset: false }, y: { stacked: true, beginAtZero: true, title: { display: true, text: 'Count' } } }, datasets: { bar: { barPercentage: 0.9, categoryPercentage: 1 } } } });
+    container._chart = new Chart(cv, { type: 'bar', data: { datasets: ds }, options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { display: true, position: 'top', align: 'end', labels: { boxWidth: 10, font: { size: 10 } } }, title: { display: true, text: title, font: { size: 11 } }, subtitle: { display: true, text: histNote(b), font: { size: 9, style: 'italic' }, color: '#666', position: 'bottom' } },
+      scales: { x: { type: 'linear', min: b.lo, max: b.hi, stacked: true, title: { display: true, text: xLabel }, ticks: { font: { size: 9 }, callback: function (v) { return fmtTick(v); } }, afterBuildTicks: function (axis) { axis.ticks = b.ticks.map(function (t) { return { value: t }; }); }, offset: false }, y: { stacked: true, beginAtZero: true, title: { display: true, text: yLabel || 'Count' } } }, datasets: { bar: { barPercentage: 0.9, categoryPercentage: 1 } } } });
   }
 
   // ======================================================================
@@ -189,13 +212,12 @@
     var w = words(); var vals = A.stats.rasterVals; var area = selectionAreaM2(); A.stats.marshArea = area;
     var mean = vals.length ? vals.reduce(function (a, v) { return a + v; }, 0) / vals.length : null; var sorted = vals.slice().sort(function (a, b) { return a - b; }); var median = vals.length ? sorted[Math.floor(vals.length / 2)] : null;
     var sd = vals.length ? Math.sqrt(vals.reduce(function (a, v) { return a + (v - mean) * (v - mean); }, 0) / vals.length) : null; A.stats.marshMean = mean; A.stats.marshMedian = median; A.stats.marshSd = sd;
-    if (vals.length) { var mn = sorted[0], mx = sorted[sorted.length - 1]; var nb = 30; var bw = Math.max((mx - mn) / nb, 1e-6); var hist = new Array(nb).fill(0); /* 30 bins across the pixel slope range */ vals.forEach(function (v) { hist[Math.min(nb - 1, Math.floor((v - mn) / bw))]++; }); A.stats.marshHist = { bucketMin: mn, bucketWidth: bw, histogram: hist, bucketMeans: hist.map(function (_, i) { return mn + (i + 0.5) * bw; }) }; }
+    A.stats.marshHist = vals.length ? histBins(vals) : null;        // same data-driven binning as the other histograms
     if (g) MM.addToolLayer('raster', new GeoRasterLayer({ georaster: g, opacity: 1, resolution: 256, mask: S.selection.maskGeometry, mask_strategy: 'outside', pixelValuesToColorFn: function (px) { var v = px[0]; if (v === null || v === undefined || !isFinite(v) || v === g.noDataValue) return null; return MM.rampColor(v, slopePalette().map(function (c) { return c === 'white' ? '#FFFFFF' : c === 'blue' ? '#0000FF' : c; }), A.stats.slopeMin, A.stats.slopeMax); } }));
     var b = block('Marsh Trajectory (Landsat ' + S.opts.index + '):');
     b.appendChild(el('div', 'pv-small', 'Area: ' + fmtArea(area) + ' | Mean Slope: ' + fmtNum(mean, 5) + ' /year | Median Slope: ' + fmtNum(median, 5) + ' /year'));
     var tr = el('div', 'pv-h', 'Overall trend: ' + (mean !== null && mean >= 0 ? w.pos : w.neg)); tr.style.color = mean !== null && mean >= 0 ? w.posC : w.negC; b.appendChild(tr);
-    if (A.stats.marshHist) { var ch = el('div'); b.appendChild(ch); var h = A.stats.marshHist; var nNeg = vals.filter(function (v) { return v < 0; }).length, nPos = vals.length - nNeg; var ds = [{ label: w.neg + ' (slope < 0): ' + nNeg + ' px', data: h.bucketMeans.map(function (c, i) { return { x: c, y: c < 0 ? h.histogram[i] : 0 }; }), backgroundColor: w.negC }, { label: w.pos + ' (slope \u2265 0): ' + nPos + ' px', data: h.bucketMeans.map(function (c, i) { return { x: c, y: c >= 0 ? h.histogram[i] : 0 }; }), backgroundColor: w.posC }];
-      var wrap = el('div', 'pv-chart-wrap'); wrap.style.height = '180px'; var cv = el('canvas'); wrap.appendChild(cv); ch.appendChild(wrap); new Chart(cv, { type: 'bar', data: { datasets: ds }, options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { display: true, position: 'top', align: 'end', labels: { boxWidth: 10, font: { size: 10 } } }, title: { display: true, text: 'Marsh Pixel ' + S.opts.index + ' Slope Distribution', font: { size: 11 } } }, scales: { x: { type: 'linear', min: -0.03, max: 0.03, stacked: true, title: { display: true, text: 'Slope (' + S.opts.index + '/year)' }, ticks: { font: { size: 9 } } }, y: { stacked: true, beginAtZero: true, title: { display: true, text: 'Pixel Count' } } } } }); }
+    if (A.stats.marshHist) { var ch = el('div'); b.appendChild(ch); var nNeg = vals.filter(function (v) { return v < 0; }).length, nPos = vals.length - nNeg; panelHistogram(ch, vals, 'Marsh Pixel ' + S.opts.index + ' Slope Distribution', 'Slope (' + S.opts.index + '/year)', [w.negC, w.posC], [w.neg + ' (slope < 0): ' + nNeg + ' px', w.pos + ' (slope \u2265 0): ' + nPos + ' px'], 'Pixel Count'); }
   }
   function poolStats() {
     return Promise.all([MM.load('pools'), MM.selectionPools()]).then(function (r) {
