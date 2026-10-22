@@ -22,7 +22,7 @@
 
   // ---------- Step 2: add a file ----------
   function showAddFile() {
-    clearTool(); MM.clearSide(); MM.titlePanel('<i>Your</i> Data Viewer', 'beta'); MM.addSwitcher('data_viewer'); S.activeTool = 'data_viewer'; V.coloured = false;
+    clearTool(); MM.clearSide(); MM.titlePanel('<i>Your</i> Data Viewer'); MM.addSwitcher('data_viewer'); S.activeTool = 'data_viewer'; V.coloured = false;
     add(el('div', 'pv-step', 'Step 2: Add Your File'));
     add(el('div', 'pv-small', 'Add a GeoJSON file, a GeoPackage, a KML file or a shapefile of your own features (points, lines or polygons).'));
     var sp = add(el('div')); sp.style.height = '8px';
@@ -125,7 +125,7 @@
 
   // ---------- Step 3: settings ----------
   function showSettings() {
-    clearTool(); MM.clearSide(); MM.titlePanel('<i>Your</i> Data Viewer', 'beta'); MM.addSwitcher('data_viewer'); V.coloured = false;
+    clearTool(); MM.clearSide(); MM.titlePanel('<i>Your</i> Data Viewer'); MM.addSwitcher('data_viewer'); V.coloured = false;
     add(el('div', 'pv-step', 'Step 3: Select Satellite, Index and Season'));
     add(el('div', 'pv-h lg', 'Configure Analysis Settings:'));
     add(el('div', 'pv-p', 'Satellite:')); var satSel = add(MM.select([['Landsat (30m, 1984-Current)', 'Landsat'], ['Sentinel-2 (20m, 2015-Current)', 'Sentinel-2', true]], S.opts.satellite, '280px'));
@@ -140,7 +140,7 @@
 
   // ---------- Step 4: trajectories and the series panel ----------
   function header() {
-    ui = {}; MM.clearSide(); MM.titlePanel('<i>Your</i> Data Viewer', 'beta'); MM.addSwitcher('data_viewer');
+    ui = {}; MM.clearSide(); MM.titlePanel('<i>Your</i> Data Viewer'); MM.addSwitcher('data_viewer');
     add(el('div', 'pv-h', 'Your Features')); add(el('div', 'pv-small', 'Satellite: ' + S.opts.satellite + ' | Index: ' + S.opts.index + ' | Season: ' + V.season.label));
     columnInputs();
     thin('navy'); MM.mapOpacity([{ onInput: setOpacity }], 'Layer Transparency');
@@ -197,5 +197,5 @@
     }).catch(function (e) { if (req !== V.reqId) return; V.loading = false; V.panel.showError([], 'Error loading time series: ' + e.message); });
   }
 
-  MM.registerTool({ id: 'data_viewer', label: 'Your Data Viewer', labelHtml: '<i>Your</i> Data Viewer', beta: true, group: 'analysis', selection: { defaultMethod: 'Marsh Units' }, start: function () { S.step = 2; showAddFile(); }, switchIn: function () { S.step = 2; showAddFile(); }, clear: clearTool });
+  MM.registerTool({ id: 'data_viewer', label: 'Your Data Viewer', labelHtml: '<i>Your</i> Data Viewer', group: 'analysis', selection: { defaultMethod: 'Marsh Units' }, start: function () { S.step = 2; showAddFile(); }, switchIn: function () { S.step = 2; showAddFile(); }, clear: clearTool });
 })(window.MM);

@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MassMarsh Remote Sensing Portal (beta)</title>
-  <meta name="description" content="MassMarsh Remote Sensing Portal, beta of the server-native viewer: assessment and restoration reports, pool, ditch, raster, comprehensive, vegetated fraction, LiDAR and historical imagery viewers for Massachusetts salt marsh, served from the MassMarsh servers.">
+  <title>MassMarsh Remote Sensing Portal</title>
+  <meta name="description" content="MassMarsh Remote Sensing Portal, the server-native viewer: assessment and restoration reports, pool, ditch, raster, comprehensive, vegetated fraction, LiDAR and historical imagery viewers for Massachusetts salt marsh, served from the MassMarsh servers.">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,400;0,700;1,400;1,700&display=swap">
   <link rel="stylesheet" href="styles.css">
-  <link rel="stylesheet" href="pool-viewer.css?v=20261022c">
+  <link rel="stylesheet" href="pool-viewer.css?v=20261022d">
   <link rel="stylesheet" href="massmarsh/portal.css">
   <style>
     /* header laid out like the Earth Engine app on massmarshviewer.com: 70 px, #fafafa, 50 px logo, 400 x 38 white rounded search box */
@@ -289,7 +289,7 @@
     <div class="mm-header-inner">
       <a href="./" rel="home" class="mm-banner" title="MassMarsh Remote Sensing Portal home"><img src="assets/TimeSeriesBanner.png" alt="University of Massachusetts Amherst, Massachusetts Geological Survey, MassMarsh, MassDEP"></a>
       <form class="mm-search" role="search" onsubmit="return false"><svg class="mm-search-icon" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" fill="currentColor"/></svg><input id="mm-search-input" class="mm-search-input" type="search" placeholder="Search places" aria-label="Search places" autocomplete="off"></form>
-      <div class="mm-header-right"><span class="mm-beta">beta</span></div>
+      <div class="mm-header-right"></div>
     </div>
   </header>
   <div class="pv-layout" id="layout">
@@ -317,16 +317,16 @@
   <script src="https://unpkg.com/georaster-layer-for-leaflet@3.10.0/dist/georaster-layer-for-leaflet.min.js"></script>
   <script src="https://unpkg.com/pmtiles@3.2.1/dist/pmtiles.js"></script>
   <script>window.MM_DATA_BASE = 'data/';</script>
-  <script src="massmarsh/core.js?v=20261022c"></script>
-  <script src="massmarsh/tool-raster.js?v=20261022c"></script>
-  <script src="massmarsh/tool-data.js?v=20261022c"></script>
-  <script src="massmarsh/tool-pool.js?v=20261022c"></script>
-  <script src="massmarsh/tool-ditch.js?v=20261022c"></script>
-  <script src="massmarsh/tool-historical.js?v=20261022c"></script>
-  <script src="massmarsh/tool-comprehensive.js?v=20261022c"></script>
-  <script src="massmarsh/tool-lidar.js?v=20261022c"></script>
-  <script src="massmarsh/tool-uvvr.js?v=20261022c"></script>
-  <script src="massmarsh/tool-reports.js?v=20261022c"></script>
+  <script src="massmarsh/core.js?v=20261022d"></script>
+  <script src="massmarsh/tool-raster.js?v=20261022d"></script>
+  <script src="massmarsh/tool-data.js?v=20261022d"></script>
+  <script src="massmarsh/tool-pool.js?v=20261022d"></script>
+  <script src="massmarsh/tool-ditch.js?v=20261022d"></script>
+  <script src="massmarsh/tool-historical.js?v=20261022d"></script>
+  <script src="massmarsh/tool-comprehensive.js?v=20261022d"></script>
+  <script src="massmarsh/tool-lidar.js?v=20261022d"></script>
+  <script src="massmarsh/tool-uvvr.js?v=20261022d"></script>
+  <script src="massmarsh/tool-reports.js?v=20261022d"></script>
   <script>MM.boot();</script>
   <script>
     (function () {
