@@ -24,7 +24,7 @@
   function showAddFile() {
     clearTool(); MM.clearSide(); MM.titlePanel('<i>Your</i> Data Viewer', 'beta'); MM.addSwitcher('data_viewer'); S.activeTool = 'data_viewer'; V.coloured = false;
     add(el('div', 'pv-step', 'Step 2: Add Your File'));
-    add(el('div', 'pv-small', 'Add a GeoJSON file, a GeoPackage or a shapefile of your own features (points, lines or polygons).'));
+    add(el('div', 'pv-small', 'Add a GeoJSON file, a GeoPackage, a KML file or a shapefile of your own features (points, lines or polygons).'));
     var sp = add(el('div')); sp.style.height = '8px';
     add(el('div', 'pv-small', 'Features outside the selected area are cropped. If no features are within your selected area, you will not move past this step.'));
     var sp2 = add(el('div')); sp2.style.height = '8px';

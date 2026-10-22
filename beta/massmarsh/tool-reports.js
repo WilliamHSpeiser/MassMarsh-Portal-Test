@@ -437,7 +437,7 @@
   function showSiteSelection() {
     rui = {}; clearSites(); MM.clearToolLayers(); MM.stopDraw(); MM.setClickHandler(null); MM.clearSide(); MM.titlePanel('Restoration Efficacy Report');
     add(el('div', 'pv-h lg', 'Step 3: Site Selection Method')); add(el('div', 'pv-small', 'Select how you want to define restoration sites:'));
-    var sel = add(MM.select(['Draw Points', 'Draw Polygons', ['GeoJSON / GeoPackage Upload', 'GeoJSON Upload'], 'Shapefile Upload', 'Paste GeoJSON', 'Input Coordinates', 'Select Pools', 'Select Ditches', 'Select Pools and Ditches'], 'Draw Points', '200px'));
+    var sel = add(MM.select(['Draw Points', 'Draw Polygons', ['GeoJSON / GeoPackage / KML Upload', 'GeoJSON Upload'], 'Shapefile Upload', 'Paste GeoJSON', 'Input Coordinates', 'Select Pools', 'Select Ditches', 'Select Pools and Ditches'], 'Draw Points', '200px'));
     rui.method = add(el('div')); rui.sites = add(el('div')); thin();
     var gen = add(button('Generate Report', function () { if (!Rz.sites.length) { rui.sites.innerHTML = ''; var e = el('div', 'pv-err', 'Please add at least one restoration site.'); e.style.cssText = 'font-size:12px;font-weight:bold;color:#c00'; rui.sites.appendChild(e); return; } generateRestorationReport(); })); gen.style.width = '100%';
     thin('light'); add(button('← Back', function () { MM.stopDraw(); MM.setClickHandler(null); MM.clearToolLayers(); showRestorationSatellite(); }, 'pv-back'));
@@ -536,9 +536,9 @@
   // Site upload: GeoJSON or shapefile features become sites (shared window in core: coordinate conversion, name and date columns)
   function uploadMethodUI(m) {
     var c = rui.method; var shp = m === 'Shapefile Upload';
-    c.appendChild(el('div', 'pv-small', shp ? 'Upload a shapefile of your restoration sites (a .zip, or the .shp, .shx, .dbf and .prj files together).' : 'Upload a GeoJSON or GeoPackage file of your restoration sites.'));
+    c.appendChild(el('div', 'pv-small', shp ? 'Upload a shapefile of your restoration sites (a .zip, or the .shp, .shx, .dbf and .prj files together).' : 'Upload a GeoJSON, GeoPackage or KML / KMZ file of your restoration sites.'));
     c.appendChild(el('div', 'pv-grey', 'Every point, line and polygon in the file becomes a site, just like drawing it. A name column (name, site, id, ...) and a date column (date, start, restored, year, ...) are used when present. Nothing is uploaded anywhere: the file stays in your browser and is forgotten when you leave the page.'));
-    var ob = button(shp ? 'Open shapefile window' : 'Open GeoJSON / GeoPackage window', function () { openUpload(m); }); ob.style.width = '200px'; c.appendChild(ob);
+    var ob = button(shp ? 'Open shapefile window' : 'Open upload window', function () { openUpload(m); }); ob.style.width = '200px'; c.appendChild(ob);
     var cl = button('Clear uploaded sites', function () { removeByMethod(m); }); cl.style.width = '200px'; c.appendChild(cl);
     openUpload(m);
   }

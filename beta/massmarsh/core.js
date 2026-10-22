@@ -393,7 +393,7 @@ window.MM = (function () {
     labelWithInfo('Report Generators', 'Compile a report with remote sensing information to summarize observations in a selected area and flag locations possibly requiring attention.\n\n• Marsh Assessment Report – Generate a report that summarizes feature selections and their remote sensing trajectory, or find areas that may warrant concern\n\n• Restoration Efficacy Report – Generate a report that documents the time series at selected locations within a marsh and, if desired, any changes from user-input dates (such as project implementation dates)\n\n• Comprehensive Report – Generate both above reports in the same place, on the same document');
     ['assessment_report', 'restoration_report', 'comprehensive_report'].forEach(toolButton);
     add(el('div', 'pv-divider')).style.margin = '20px 0 15px 0';
-    labelWithInfo('Analysis Tools', 'Explore marsh dynamics with our specialized analysis tools:\n\n• Pool Viewer – Examine and analyze time series trends for individual salt marsh pools\n\n• Ditch Viewer – Examine and analyze time series trends for ditches from Peck et al., 2025\n\n• Raster Viewer – Examine rasters and analyze time series trends for individual and groups of pixels\n\n• Your Data Viewer – Upload, examine, and analyze time series for your own GeoJSON, GeoPackage, or shapefiles\n\n• Comprehensive Viewer – All viewers combined in one toolbox');
+    labelWithInfo('Analysis Tools', 'Explore marsh dynamics with our specialized analysis tools:\n\n• Pool Viewer – Examine and analyze time series trends for individual salt marsh pools\n\n• Ditch Viewer – Examine and analyze time series trends for ditches from Peck et al., 2025\n\n• Raster Viewer – Examine rasters and analyze time series trends for individual and groups of pixels\n\n• Your Data Viewer – Upload, examine, and analyze time series for your own GeoJSON, GeoPackage, KML, or shapefiles\n\n• Comprehensive Viewer – All viewers combined in one toolbox');
     ['pool_viewer', 'ditch_viewer', 'raster_viewer', 'data_viewer'].forEach(toolButton);
     var sep = add(el('div')); sep.style.cssText = 'border-top:1px dotted #bbb;margin:18px 0 16px 0';   // the Comprehensive Viewer (all viewers in one) sits apart from the single-feature viewers
     toolButton('comprehensive_viewer');
@@ -1463,6 +1463,63 @@ window.MM = (function () {
       return out;
     });
   }
+  // KML / KMZ: every Placemark (in nested Folders / Documents) becomes a feature; name, description, ExtendedData
+  // (Data / SimpleData) and TimeStamp / TimeSpan become properties. KML coordinates are longitude / latitude by the standard;
+  // the number-range check still runs so a file written with projected numbers gets the coordinate-system row.
+  function kmlToGeoJSON(text) {
+    var doc = new DOMParser().parseFromString(text, 'application/xml');
+    if (doc.getElementsByTagName('parsererror').length) throw new Error('the file is not well-formed KML');
+    function kids(n, name) { var out = []; for (var ch = n.firstElementChild; ch; ch = ch.nextElementSibling) if (ch.localName === name) out.push(ch); return out; }
+    function first(n, name) { var all = n.getElementsByTagNameNS('*', name); return all.length ? all[0] : null; }
+    function coords(n) { var ce = first(n, 'coordinates'); if (!ce) return []; return ce.textContent.trim().split(/\s+/).map(function (t) { var q = t.split(',').map(Number); return [q[0], q[1]]; }).filter(function (q) { return isFinite(q[0]) && isFinite(q[1]); }); }
+    function geom(n) {
+      var ln = n.localName, cs;
+      if (ln === 'Point') { cs = coords(n); return cs.length ? { type: 'Point', coordinates: cs[0] } : null; }
+      if (ln === 'LineString' || ln === 'LinearRing') { cs = coords(n); return cs.length > 1 ? { type: 'LineString', coordinates: cs } : null; }
+      if (ln === 'Polygon') {
+        var rings = []; kids(n, 'outerBoundaryIs').forEach(function (b) { var r = first(b, 'LinearRing'); if (r) rings.push(coords(r)); });
+        kids(n, 'innerBoundaryIs').forEach(function (b) { var r = first(b, 'LinearRing'); if (r) rings.push(coords(r)); });
+        rings = rings.filter(function (r) { return r.length >= 3; }); return rings.length ? { type: 'Polygon', coordinates: rings } : null;
+      }
+      if (ln === 'MultiGeometry') { var gs = []; for (var ch = n.firstElementChild; ch; ch = ch.nextElementSibling) { var g = geom(ch); if (g) gs.push(g); } return gs.length ? { type: 'GeometryCollection', geometries: gs } : null; }
+      if (ln === 'Track' || ln === 'MultiTrack') { var pts = []; Array.prototype.forEach.call(n.getElementsByTagNameNS('*', 'coord'), function (ce) { var q = ce.textContent.trim().split(/\s+/).map(Number); if (isFinite(q[0]) && isFinite(q[1])) pts.push([q[0], q[1]]); }); return pts.length > 1 ? { type: 'LineString', coordinates: pts } : null; }
+      return null;
+    }
+    var feats = [];
+    Array.prototype.forEach.call(doc.getElementsByTagNameNS('*', 'Placemark'), function (pm) {
+      var g = null; for (var ch = pm.firstElementChild; ch && !g; ch = ch.nextElementSibling) g = geom(ch);
+      if (!g) return;
+      var props = {}; var nm = kids(pm, 'name')[0]; if (nm) props.name = nm.textContent.trim(); var ds = kids(pm, 'description')[0]; if (ds) props.description = ds.textContent.trim();
+      var ts = kids(pm, 'TimeStamp')[0]; if (ts) { var w = first(ts, 'when'); if (w) props.timestamp = w.textContent.trim(); }
+      var sp = kids(pm, 'TimeSpan')[0]; if (sp) { var b0 = first(sp, 'begin'); if (b0) props.begin = b0.textContent.trim(); var e0 = first(sp, 'end'); if (e0) props.end = e0.textContent.trim(); }
+      Array.prototype.forEach.call(pm.getElementsByTagNameNS('*', 'Data'), function (d) { var k = d.getAttribute('name'); var v = first(d, 'value'); if (k && v) props[k] = v.textContent.trim(); });
+      Array.prototype.forEach.call(pm.getElementsByTagNameNS('*', 'SimpleData'), function (d) { var k = d.getAttribute('name'); if (k) props[k] = d.textContent.trim(); });
+      feats.push({ type: 'Feature', geometry: g, properties: props });
+    });
+    return { type: 'FeatureCollection', features: feats };
+  }
+  function unzipFirst(buffer, re) {                          // minimal ZIP reader: the first entry whose name matches (stored or deflated)
+    var dv = new DataView(buffer), u8 = new Uint8Array(buffer), n = u8.length, eocd = -1;
+    for (var i = n - 22; i >= Math.max(0, n - 70000); i--) if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+    if (eocd < 0) return Promise.reject(new Error('not a zip file'));
+    var count = dv.getUint16(eocd + 10, true), off = dv.getUint32(eocd + 16, true), td = new TextDecoder();
+    for (var k = 0; k < count; k++) {
+      if (dv.getUint32(off, true) !== 0x02014b50) break;
+      var method = dv.getUint16(off + 10, true), csize = dv.getUint32(off + 20, true), nlen = dv.getUint16(off + 28, true), elen = dv.getUint16(off + 30, true), clen = dv.getUint16(off + 32, true), lho = dv.getUint32(off + 42, true);
+      var name = td.decode(u8.subarray(off + 46, off + 46 + nlen)); off += 46 + nlen + elen + clen;
+      if (!re.test(name)) continue;
+      var lnlen = dv.getUint16(lho + 26, true), lelen = dv.getUint16(lho + 28, true), start = lho + 30 + lnlen + lelen, data = u8.subarray(start, start + csize);
+      if (method === 0) return Promise.resolve(data);
+      if (method === 8 && typeof DecompressionStream === 'function') return new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer().then(function (b) { return new Uint8Array(b); });
+      return Promise.reject(new Error('unsupported compression inside the zip'));
+    }
+    return Promise.reject(new Error('no .kml file inside the KMZ'));
+  }
+  function readKml(file) {                                    // .kml text, or .kmz (a zip holding the .kml) -> FeatureCollection
+    if (/\.kmz$/i.test(file.name)) return file.arrayBuffer().then(function (b) { return unzipFirst(b, /\.kml$/i); }).then(function (u8) { return kmlToGeoJSON(new TextDecoder().decode(u8)); });
+    return file.text().then(kmlToGeoJSON);
+  }
+  function isKml(files) { return Array.prototype.slice.call(files).some(function (f) { return /\.km[lz]$/i.test(f.name); }); }
   function isGeoPackage(files) { return Array.prototype.slice.call(files).some(function (f) { return /\.gpkg$/i.test(f.name); }); }
   function isShapefileSet(files) { return Array.prototype.slice.call(files).some(function (f) { return /\.(zip|shp|shx|dbf|prj|cpg)$/i.test(f.name); }); }
   // o: { kind: 'geojson' | 'shapefile' | 'any', title, addLabel, max (default 25), onSites(sites) }
@@ -1471,10 +1528,10 @@ window.MM = (function () {
     var ov = el('div', 'pv-overlay'); var box = el('div', 'pv-dialog'); box.style.width = 'min(520px, 92vw)'; ov.appendChild(box);
     var x = el('button', 'pv-dialog-x', '×'); x.setAttribute('aria-label', 'Close'); box.appendChild(x);
     box.appendChild(el('div', 'pv-dialog-h', o.title || (kind === 'shapefile' ? 'Shapefile Upload' : kind === 'geojson' ? 'GeoJSON Upload' : 'Add a spatial file')));
-    box.appendChild(el('div', 'pv-small', kind === 'shapefile' ? 'Drop a .zip of the shapefile here, or the .shp, .shx, .dbf and .prj files together (a GeoPackage .gpkg works here too).' : kind === 'geojson' ? 'Drop a .geojson, .json or .gpkg (GeoPackage) file here.' : 'Drop a GeoJSON file (.geojson / .json), a GeoPackage (.gpkg) or a shapefile (a .zip, or the .shp, .shx, .dbf and .prj files together) here.'));
-    var zone = el('div', '', kind === 'shapefile' ? 'Drag the shapefile here' : kind === 'geojson' ? 'Drag the GeoJSON or GeoPackage file here' : 'Drag the file here'); zone.style.cssText = 'margin:12px 0 8px;padding:34px 10px;border:2px dashed #b0bec5;border-radius:10px;background:#f7f9fb;text-align:center;color:#607d8b;font-size:14px;cursor:pointer';
+    box.appendChild(el('div', 'pv-small', kind === 'shapefile' ? 'Drop a .zip of the shapefile here, or the .shp, .shx, .dbf and .prj files together (a GeoPackage .gpkg or a KML / KMZ works here too).' : kind === 'geojson' ? 'Drop a .geojson, .json, .gpkg (GeoPackage), .kml or .kmz file here.' : 'Drop a GeoJSON file (.geojson / .json), a GeoPackage (.gpkg), a KML / KMZ file or a shapefile (a .zip, or the .shp, .shx, .dbf and .prj files together) here.'));
+    var zone = el('div', '', kind === 'shapefile' ? 'Drag the shapefile here' : kind === 'geojson' ? 'Drag the GeoJSON, GeoPackage or KML file here' : 'Drag the file here'); zone.style.cssText = 'margin:12px 0 8px;padding:34px 10px;border:2px dashed #b0bec5;border-radius:10px;background:#f7f9fb;text-align:center;color:#607d8b;font-size:14px;cursor:pointer';
     box.appendChild(zone);
-    var inp = el('input'); inp.type = 'file'; inp.style.display = 'none'; inp.accept = kind === 'shapefile' ? '.zip,.shp,.shx,.dbf,.prj,.cpg,.gpkg' : kind === 'geojson' ? '.geojson,.json,.gpkg,application/geo+json,application/json' : '.geojson,.json,.gpkg,.zip,.shp,.shx,.dbf,.prj,.cpg'; if (kind !== 'geojson') inp.multiple = true; box.appendChild(inp);
+    var inp = el('input'); inp.type = 'file'; inp.style.display = 'none'; inp.accept = kind === 'shapefile' ? '.zip,.shp,.shx,.dbf,.prj,.cpg,.gpkg,.kml,.kmz' : kind === 'geojson' ? '.geojson,.json,.gpkg,.kml,.kmz,application/geo+json,application/json' : '.geojson,.json,.gpkg,.kml,.kmz,.zip,.shp,.shx,.dbf,.prj,.cpg'; if (kind !== 'geojson') inp.multiple = true; box.appendChild(inp);
     var pick = button(kind === 'geojson' ? 'Choose file...' : 'Choose file(s)...', function () { inp.click(); }); pick.style.width = '160px'; box.appendChild(pick);
     var crsRow = el('div', 'pv-small'); crsRow.style.marginTop = '8px'; box.appendChild(crsRow);
     var status = el('div', 'pv-small'); status.style.cssText = 'margin-top:8px;min-height:18px'; box.appendChild(status);
@@ -1517,6 +1574,15 @@ window.MM = (function () {
           if (!unresolved.length) { var codes = layers.map(function (L2) { return L2.crs; }); parseGeo(codes[0], 'file spatial reference' + (codes.some(function (q) { return q !== codes[0]; }) ? 's' : '')); return; }
           var det = detectCrs(unresolved[0].fc); crsRowFor(unresolved[0].fc, { code: det.code, how: det.how + '; the file\u2019s own definition could not be used' }); parseGeo(det.code, det.how);
         }).catch(function (e) { fail('Could not read the GeoPackage: ' + (e && e.message || e)); });
+        return;
+      }
+      if (isKml(files)) {                                        // KML / KMZ is accepted by every window
+        var kf = Array.prototype.slice.call(files).filter(function (f) { return /\.km[lz]$/i.test(f.name); })[0];
+        readKml(kf).then(function (gj) {
+          if (!gj.features.length) return fail('No placemarks with a point, line or polygon were found in the KML.');
+          gjObj = gj; var det = detectCrs(gj); if (det.code === 'EPSG:4326') det = { code: 'EPSG:4326', how: 'KML, longitude / latitude' };
+          crsRowFor(gj, det); parseGeo(det.code, det.how);
+        }).catch(function (e) { fail('Could not read the KML: ' + (e && e.message || e)); });
         return;
       }
       var shpSet = kind === 'shapefile' || (kind === 'any' && isShapefileSet(files));
@@ -1593,6 +1659,6 @@ window.MM = (function () {
     cubeReady: cubeReady, cubeAvailable: cubeAvailable, cube: cube, CUBES: CUBES, pkey: pkey, platName: platName, loadBlock: loadBlock, cubeLocate: cubeLocate, cubeLocateUtm: cubeLocateUtm, pixelSeries: pixelSeries, pixelSeriesFromBlock: pixelSeriesFromBlock, meanSeries: meanSeries, pool: pool, gridMask: gridMask, cubePixelsInMask: cubePixelsInMask, selectionMask: selectionMask, bandIndex: bandIndex,
     POOL_DS: POOL_DS, POOL_PROVENANCE: POOL_PROVENANCE, poolDataset: poolDataset, poolSlopeProps: poolSlopeProps, poolSlopeOf: poolSlopeOf, poolStatsLine: poolStatsLine, poolSeriesPts: poolSeriesPts, seriesDir: seriesDir, enableSentinel2: enableSentinel2, loadServerRaster: loadServerRaster, loadSlopeRaster: loadSlopeRaster,
     compareOn: compareOn, compareOff: compareOff,
-    geometrySeries: geometrySeries, uploadDialog: uploadDialog, featureName: featureName, featureDate: featureDate, parseDate: parseDate, nameColumn: nameColumn, dateColumn: dateColumn, matchColumn: matchColumn, explodeGeometry: explodeGeometry, sitesFromGeoJSON: sitesFromGeoJSON, readShapefiles: readShapefiles, fitToGeometries: fitToGeometries, inSelectedArea: inSelectedArea, readGeoPackage: readGeoPackage, UPLOAD_CRS: UPLOAD_CRS
+    geometrySeries: geometrySeries, uploadDialog: uploadDialog, featureName: featureName, featureDate: featureDate, parseDate: parseDate, nameColumn: nameColumn, dateColumn: dateColumn, matchColumn: matchColumn, explodeGeometry: explodeGeometry, sitesFromGeoJSON: sitesFromGeoJSON, readShapefiles: readShapefiles, fitToGeometries: fitToGeometries, inSelectedArea: inSelectedArea, readGeoPackage: readGeoPackage, readKml: readKml, kmlToGeoJSON: kmlToGeoJSON, UPLOAD_CRS: UPLOAD_CRS
   };
 })();
