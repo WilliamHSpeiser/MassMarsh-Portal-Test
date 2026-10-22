@@ -78,7 +78,7 @@ window.MM = (function () {
   function addToolLayer(name, lyr) { removeToolLayer(name); layers.tool[name] = lyr; lyr.addTo(map); if (layers.highlight) { layers.highlight.remove(); layers.highlight.addTo(map); } return lyr; }
   function removeToolLayer(name) { if (layers.tool[name]) { map.removeLayer(layers.tool[name]); delete layers.tool[name]; } }
   function clearToolLayers() { Object.keys(layers.tool).forEach(removeToolLayer); }
-  function clearAllLayers() { ['base', 'selected', 'highlight', 'drawn'].forEach(removeLayer); clearToolLayers(); stopDraw(); mapLegend(null); }
+  function clearAllLayers() { ['base', 'selected', 'highlight', 'drawn'].forEach(removeLayer); clearToolLayers(); stopDraw(); mapLegend(null); mapOpacity(null); }
 
   // ---------- data ----------
   var cache = {};
@@ -184,7 +184,7 @@ window.MM = (function () {
   var side = document.getElementById('pv-side');
   function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
   function add(n) { side.appendChild(n); return n; }
-  function clearSide() { side.innerHTML = ''; mapLegend(null); }
+  function clearSide() { side.innerHTML = ''; mapLegend(null); mapOpacity(null); opacityOpen = false; }
   function titlePanel(sub, badge) {                          // "MassMarsh:" links to the portal home: './' resolves to the page's own directory (beta/ now, the site root later); badge e.g. 'beta'
     var t = el('div', 'pv-title'); var brand = el('a', 'brand', 'MassMarsh:'); brand.href = './'; brand.title = 'MassMarsh Remote Sensing Portal home'; t.appendChild(brand); var ss = el('span', 'sub'); if (/<[a-z]/.test(sub)) ss.innerHTML = sub; else ss.textContent = sub; t.appendChild(ss); if (badge) t.appendChild(el('span', 'pv-beta', badge)); add(t); add(el('div', 'pv-divider'));
   }
@@ -897,6 +897,49 @@ window.MM = (function () {
   function mapLegend(node) {
     if (!legendBox) { legendBox = el('div', 'pv-map-legend'); map.getContainer().appendChild(legendBox); }
     legendBox.innerHTML = ''; if (node) { legendBox.appendChild(node); legendBox.style.display = ''; } else legendBox.style.display = 'none';
+    placeMapOpacity();
+  }
+  // Layer transparency control on the map (bottom centre, to the right of the legend). One layer: a single slider.
+  // Several layers (LiDAR, UVVR): a collapsed "Layer Transparency Slider" box with a triangle that expands upward to one
+  // slider per layer; the triangle points up when collapsed and down when expanded. rows: [{label, value, onInput}].
+  var opacityBox = null, opacityOpen = false;
+  function mapOpacity(rows, title) {
+    if (!opacityBox) {
+      opacityBox = el('div', 'pv-map-opacity'); map.getContainer().appendChild(opacityBox);
+      L.DomEvent.disableClickPropagation(opacityBox); L.DomEvent.disableScrollPropagation(opacityBox);
+      map.on('resize', placeMapOpacity);
+    }
+    opacityBox.innerHTML = '';
+    if (!rows || !rows.length) { opacityBox.style.display = 'none'; return null; }
+    opacityBox.style.display = ''; var first = null;
+    function sliderRow(r, withLabel) {
+      var row = el('div', 'pv-map-opacity-row');
+      if (withLabel) row.appendChild(el('span', 'pv-map-opacity-label', r.label));
+      var sl = el('input'); sl.type = 'range'; sl.min = 0; sl.max = 1; sl.step = 0.1; sl.value = r.value === undefined ? 1 : r.value;
+      var sv = el('span', 'pv-map-opacity-val', String(sl.value));
+      sl.addEventListener('input', function () { sv.textContent = sl.value; r.onInput(parseFloat(sl.value)); });
+      row.appendChild(sl); row.appendChild(sv); if (!first) first = sl; return row;
+    }
+    if (rows.length === 1) {                                 // one layer: title and slider on one line
+      var one = sliderRow(rows[0], false); one.insertBefore(el('span', 'pv-map-opacity-title', 'Layer Transparency' + (rows[0].label ? ' (' + rows[0].label + ')' : '')), one.firstChild); opacityBox.appendChild(one);   /* the title argument names the multi-layer box only */
+    } else {                                                 // several layers: rows above a clickable header; the box grows upward
+      var list = el('div', 'pv-map-opacity-rows'); rows.forEach(function (r) { list.appendChild(sliderRow(r, true)); });
+      var head = el('div', 'pv-map-opacity-head'); var txt = el('span', '', title || 'Layer Transparency Slider'); var tri = el('span', 'pv-map-opacity-tri');
+      head.appendChild(txt); head.appendChild(tri); head.title = 'Show or hide the transparency sliders';
+      function render() { list.style.display = opacityOpen ? '' : 'none'; tri.textContent = opacityOpen ? ' \u25BC' : ' \u25B2'; placeMapOpacity(); }
+      head.addEventListener('click', function () { opacityOpen = !opacityOpen; render(); });
+      opacityBox.appendChild(list); opacityBox.appendChild(head); render();
+    }
+    placeMapOpacity(); return first;
+  }
+  function placeMapOpacity() {                               // centred at the bottom; pushed right when the legend would overlap it
+    if (!opacityBox || opacityBox.style.display === 'none') return;
+    var mw = map.getContainer().clientWidth, w = opacityBox.offsetWidth, left = Math.round((mw - w) / 2), bottom = 26;
+    if (legendBox && legendBox.style.display !== 'none') {
+      var lr = legendBox.offsetLeft + legendBox.offsetWidth + 12;
+      if (left < lr) { if (lr + w <= mw - 8) left = lr; else bottom = 26 + legendBox.offsetHeight + 8; }   // narrow map: sit above the legend instead
+    }
+    opacityBox.style.left = Math.max(8, left) + 'px'; opacityBox.style.bottom = bottom + 'px';
   }
   function legendBlock(container, pal, mn, mx, labels, title) {   // 'Legend (slope/year)' gradient bar with min (label) / 0 / max (label)
     if (container) container.innerHTML = '';
@@ -1546,7 +1589,7 @@ window.MM = (function () {
     removeLayer: removeLayer, addToolLayer: addToolLayer, removeToolLayer: removeToolLayer, clearToolLayers: clearToolLayers, clearAllLayers: clearAllLayers,
     armDraw: armDraw, stopDraw: stopDraw, isDrawing: isDrawing, setClickHandler: setClickHandler, addSwitcher: addSwitcher, removeSwitcher: removeSwitcher,
     linearFit: linearFit, xy: xy, fitSeries: fitSeries, percentile: percentile, nearestRank: nearestRank, rampColor: rampColor, hexToRgb: hexToRgb, seasonFilter: seasonFilter, seasonFilterKey: seasonFilterKey, glowLayer: glowLayer, ICONS: ICONS, limitIndexes: limitIndexes, imagerySwipe: imagerySwipe, stopSwipes: stopSwipes, tideStationFor: tideStationFor, tideTable: tideTable, TIDE_STATIONS: TIDE_STATIONS, dayPts: dayPts,
-    trendDataset: trendDataset, scatterDs: scatterDs, drawChart: drawChart, caption: caption, seriesPanel: seriesPanel, legendBlock: legendBlock, mapLegend: mapLegend, imageryCatalog: imageryCatalog, setBasemap: setBasemap, startMeasure: startMeasure, busy: busy, listservDialog: listservDialog,
+    trendDataset: trendDataset, scatterDs: scatterDs, drawChart: drawChart, caption: caption, seriesPanel: seriesPanel, legendBlock: legendBlock, mapLegend: mapLegend, mapOpacity: mapOpacity, imageryCatalog: imageryCatalog, setBasemap: setBasemap, startMeasure: startMeasure, busy: busy, listservDialog: listservDialog,
     cubeReady: cubeReady, cubeAvailable: cubeAvailable, cube: cube, CUBES: CUBES, pkey: pkey, platName: platName, loadBlock: loadBlock, cubeLocate: cubeLocate, cubeLocateUtm: cubeLocateUtm, pixelSeries: pixelSeries, pixelSeriesFromBlock: pixelSeriesFromBlock, meanSeries: meanSeries, pool: pool, gridMask: gridMask, cubePixelsInMask: cubePixelsInMask, selectionMask: selectionMask, bandIndex: bandIndex,
     POOL_DS: POOL_DS, POOL_PROVENANCE: POOL_PROVENANCE, poolDataset: poolDataset, poolSlopeProps: poolSlopeProps, poolSlopeOf: poolSlopeOf, poolStatsLine: poolStatsLine, poolSeriesPts: poolSeriesPts, seriesDir: seriesDir, enableSentinel2: enableSentinel2, loadServerRaster: loadServerRaster, loadSlopeRaster: loadSlopeRaster,
     compareOn: compareOn, compareOff: compareOff,

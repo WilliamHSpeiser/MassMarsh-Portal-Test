@@ -82,9 +82,7 @@
     var zs = add(el('div', 'pv-note', 'Show elevation normalized to local tidal range')); zs.style.margin = '0 0 5px 10px';
     ui.zinfo = add(el('div')); ui.zinfo.style.display = 'none'; var z1 = el('div', 'pv-note', 'Z* = (Elevation - MLW) / MN'); z1.style.fontStyle = 'italic'; ui.zinfo.appendChild(z1); var z2 = el('div', 'pv-credit', 'Z*=0 at MLW, Z*=1 at MHW'); z2.style.color = '#888'; ui.zinfo.appendChild(z2);
     ui.zstar.addEventListener('change', function () { Lz.zstar = ui.zstar.checked; ui.zinfo.style.display = Lz.zstar ? '' : 'none'; var keys = Lz.active.slice(); keys.forEach(removeLayer); keys.forEach(function (k) { addLayer(k); }); });
-    thin();
-    ui.opacity = add(el('div'));
-    thin();
+    thin(); updateOpacityPanel();
     add(el('div', 'pv-h lg', 'Transect Tool')).style.color = '#333';
     add(el('div', 'pv-small', 'Draw a line on the map to view elevation profile along the transect.'));
     var row = add(el('div', 'pv-row')); var drawBtn = button('Draw Transect', function () { startTransect(drawBtn); }); row.appendChild(drawBtn); row.appendChild(button('Clear All', clearTransects));
@@ -134,10 +132,8 @@
     updateOpacityPanel(); updateLegend();
   }
   function removeLayer(key) { var d = dataset(key); if (d) d.files.forEach(function (f, i) { MM.removeToolLayer('lidar:' + key + ':' + i); }); Lz.active = Lz.active.filter(function (k) { return k !== key; }); delete Lz.ranges[key]; updateOpacityPanel(); updateLegend(); }
-  function updateOpacityPanel() {
-    ui.opacity.innerHTML = ''; if (!Lz.active.length) return; ui.opacity.appendChild(el('div', 'pv-h', 'Layer Opacity:'));
-    Lz.active.forEach(function (key) { var d = dataset(key); var row = el('div', 'pv-layer-row'); var lab = el('span', '', d.name + ':'); lab.style.width = '120px'; row.appendChild(lab);
-      var sl = el('input'); sl.type = 'range'; sl.min = 0; sl.max = 1; sl.step = 0.1; sl.value = Lz.opacity[key] === undefined ? 1 : Lz.opacity[key]; sl.addEventListener('input', function () { var v = parseFloat(sl.value); Lz.opacity[key] = v; d.files.forEach(function (f, i) { var l = MM.layers.tool['lidar:' + key + ':' + i]; if (l) l.setOpacity(v); }); }); row.appendChild(sl); ui.opacity.appendChild(row); });
+  function updateOpacityPanel() {                          // transparency sliders live on the map (one row per active dataset)
+    MM.mapOpacity(Lz.active.map(function (key) { var d = dataset(key); return { label: d.name, value: Lz.opacity[key] === undefined ? 1 : Lz.opacity[key], onInput: function (v) { Lz.opacity[key] = v; d.files.forEach(function (f, i) { var l = MM.layers.tool['lidar:' + key + ':' + i]; if (l) l.setOpacity(v); }); } }; }), 'Layer Transparency Slider');
   }
   function updateLegend() {
     ui.legend.innerHTML = ''; if (!Lz.active.length) return; var key = Lz.active[0]; var r = Lz.ranges[key] || { min: -1, max: 5, isZStar: false };

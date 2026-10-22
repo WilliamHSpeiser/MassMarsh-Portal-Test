@@ -80,6 +80,15 @@ html, body { height: 100%; margin: 0; }
 .pv-tip { position: fixed; z-index: 6000; background: #fff; border: 1px solid #cfd8dc; box-shadow: 0 2px 10px rgba(0,0,0,0.3); padding: 8px 10px; border-radius: 4px; font: normal 12px Roboto, sans-serif; font-style: normal; color: #333; white-space: pre-wrap; text-align: left; pointer-events: none; }
 .pv-map-legend { position: absolute; left: 10px; bottom: 26px; z-index: 800; background: rgba(255,255,255,0.85); padding: 6px 10px; border-radius: 4px; box-shadow: 0 1px 4px rgba(0,0,0,0.3); pointer-events: none; font: 12px Roboto, sans-serif; }
 .pv-map-legend .pv-h { margin: 0 0 4px 0; }
+.pv-map-opacity { position: absolute; bottom: 26px; left: 50%; z-index: 800; background: rgba(255,255,255,0.88); padding: 5px 10px; border-radius: 4px; box-shadow: 0 1px 4px rgba(0,0,0,0.3); font: 12px Roboto, sans-serif; color: #333; }
+.pv-map-opacity-row { display: flex; align-items: center; gap: 8px; margin: 3px 0; white-space: nowrap; }
+.pv-map-opacity-row input[type=range] { width: 150px; margin: 0; vertical-align: middle; }
+.pv-map-opacity-title { font-weight: bold; margin-right: 2px; }
+.pv-map-opacity-label { min-width: 48px; text-align: right; }
+.pv-map-opacity-val { width: 24px; text-align: right; }
+.pv-map-opacity-rows { max-height: 45vh; overflow-y: auto; margin-bottom: 4px; }
+.pv-map-opacity-head { cursor: pointer; font-weight: bold; text-align: center; user-select: none; padding: 1px 2px; }
+.pv-map-opacity-head:hover { color: #00bcd4; }
 .pv-maptool { position: relative; }
 .pv-maptool-btn { width: 34px; height: 34px; border: 1px solid #bbb; border-radius: 4px; background: rgba(255,255,255,0.75); color: #333; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; }
 .pv-maptool-btn:hover { background: rgba(255,255,255,0.95); color: #00838f; }

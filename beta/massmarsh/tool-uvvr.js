@@ -42,11 +42,11 @@
   function showInspect() {
     ui = {}; MM.clearSide(); MM.titlePanel('Vegetated Fraction Viewer'); MM.addSwitcher('uvvr_viewer');
     resolutionBlock(); thin();
-    add(el('div', 'pv-h lg', 'Select Years to Display:')); add(el('div', 'pv-small', 'Check years to add layers to the map. Use sliders to adjust opacity.'));
+    add(el('div', 'pv-h lg', 'Select Years to Display:')); add(el('div', 'pv-small', 'Check years to add layers to the map. The transparency sliders are at the bottom of the map.'));
     var grid = add(el('div', 'pv-grid4')); grid.style.maxHeight = '400px'; grid.style.overflowY = 'auto';
     var perCol = Math.ceil(YEARS.length / 4);
     for (var r = 0; r < perCol; r++) for (var c = 0; c < 4; c++) { var yv = YEARS[c * perCol + r]; var cell = el('div'); if (yv !== undefined) { var lab = el('label', 'pv-check'); var cb = el('input'); cb.type = 'checkbox'; cb.checked = !!U.layers[yv]; cb.dataset.year = yv; lab.appendChild(cb); lab.appendChild(document.createTextNode(String(yv))); cell.appendChild(lab); cb.addEventListener('change', (function (yy, box) { return function () { if (box.checked) addInspectLayer(yy); else removeInspectLayer(yy); }; })(yv, cb)); } grid.appendChild(cell); }
-    ui.opacity = add(el('div')); ui.opacity.appendChild(el('div', 'pv-h', 'Layer Opacity:')); Object.keys(U.layers).forEach(function (yy) { addOpacityRow(yy); });
+    refreshOpacity();
     thin(); ui.legend = add(el('div')); inspectLegend(); thin();
     var clr = add(button('Clear All Layers', function () { clearInspect(); showInspect(); })); clr.style.width = '150px';
     reference();
@@ -58,14 +58,11 @@
     var l = el('div', 'pv-swatch-labels'); l.style.width = '140px'; l.appendChild(el('span', '', '0%')); l.appendChild(el('span', '', '100%')); ui.legend.appendChild(l);
     var f = el('div', 'pv-credit', '*(Vegetated Fraction, displayed as %)'); f.style.cssText = 'color:#888;font-style:italic'; ui.legend.appendChild(f);
   }
-  function addOpacityRow(yy) {
-    var row = el('div', 'pv-layer-row'); row.dataset.year = yy; var lab = el('span', '', yy + ':'); lab.style.width = '45px'; row.appendChild(lab);
-    var sl = el('input'); sl.type = 'range'; sl.min = 0; sl.max = 1; sl.step = 0.1; sl.value = U.opacity[yy] === undefined ? 1 : U.opacity[yy]; sl.style.width = '150px'; sl.addEventListener('input', function () { U.opacity[yy] = parseFloat(sl.value); var l = MM.layers.tool['vf:' + yy]; if (l) { if (l.setOpacity) l.setOpacity(U.opacity[yy]); else l.setStyle({ opacity: U.opacity[yy], fillOpacity: 0.67 * U.opacity[yy] }); } }); row.appendChild(sl);
-    ui.opacity.insertBefore(row, ui.opacity.children[1] || null);
+  function refreshOpacity() {                               // transparency sliders live on the map (one row per displayed year)
+    MM.mapOpacity(Object.keys(U.layers).sort().map(function (yy) { return { label: String(yy), value: U.opacity[yy] === undefined ? 1 : U.opacity[yy], onInput: function (v) { U.opacity[yy] = v; var l = MM.layers.tool['vf:' + yy]; if (l) { if (l.setOpacity) l.setOpacity(v); else l.setStyle({ opacity: v, fillOpacity: 0.67 * v }); } } }; }), 'Layer Transparency Slider');
   }
-  function removeOpacityRow(yy) { if (!ui.opacity) return; [].slice.call(ui.opacity.querySelectorAll('.pv-layer-row')).forEach(function (r) { if (r.dataset.year === String(yy)) r.remove(); }); }
   function addInspectLayer(yy) {
-    U.layers[yy] = U.mode; addOpacityRow(yy); var op = U.opacity[yy] === undefined ? 1 : U.opacity[yy];
+    U.layers[yy] = U.mode; refreshOpacity(); var op = U.opacity[yy] === undefined ? 1 : U.opacity[yy];
     if (U.mode === 'pixel') {
       openRaster(yy).then(function (g) { if (!U.layers[yy]) return;
         MM.addToolLayer('vf:' + yy, new GeoRasterLayer({ georaster: g, opacity: op, resolution: 128, mask: S.selection.maskGeometry, mask_strategy: 'outside', pixelValuesToColorFn: function (px) { var v = px[0]; if (v === null || v === undefined || !isFinite(v) || v === g.noDataValue) return null; return colourOf(v); } })); }).catch(function () {});
@@ -75,7 +72,7 @@
         MM.addToolLayer('vf:' + yy, L.geoJSON({ type: 'FeatureCollection', features: feats }, { renderer: MM.canvas, interactive: false, style: function (f) { var m = means[f.properties.uid] && means[f.properties.uid][yy]; var c = binColour(m ? m[0] : 0); return { color: c, fillColor: c, weight: 1, opacity: op, fillOpacity: 0.67 * op }; } })); });
     }
   }
-  function removeInspectLayer(yy) { MM.removeToolLayer('vf:' + yy); delete U.layers[yy]; removeOpacityRow(yy); }
+  function removeInspectLayer(yy) { MM.removeToolLayer('vf:' + yy); delete U.layers[yy]; refreshOpacity(); }
 
   // ---------- Analyze options ----------
   function showAnalyzeOptions() {
@@ -121,7 +118,7 @@
       var rb = button('Rectangle', function () { startDrawing('rectangle', rb); }, 'small'), pb = button('Polygon', function () { startDrawing('polygon', pb); }, 'small'); dr.appendChild(rb); dr.appendChild(pb); dr.appendChild(button('Clear', clearDrawing, 'small'));
     }
     ui.chart = add(el('div')); ui.info = add(el('div'));
-    thin(); MM.slider('Layer Opacity:', function (v) { var l = MM.layers.tool.analysis; if (l) { if (l.setOpacity) l.setOpacity(v); else l.setStyle({ opacity: v, fillOpacity: 0.67 * v }); } });
+    thin(); MM.mapOpacity([{ onInput: function (v) { var l = MM.layers.tool.analysis; if (l) { if (l.setOpacity) l.setOpacity(v); else l.setStyle({ opacity: v, fillOpacity: 0.67 * v }); } } }], 'Layer Transparency');
     reference();
     add(button('← Back', function () { S.step = 4; clearAnalysis(); showAnalyzeOptions(); }, 'pv-back'));
     var req = ++U.reqId;

@@ -68,7 +68,7 @@
     add(el('div', 'pv-small', 'Satellite: ' + S.opts.satellite + ' | Index: ' + S.opts.index));
     ui.stretch = add(el('div', 'pv-note', 'Stretch: loading...'));
     thin('navy');
-    MM.slider('Raster Opacity:', function (v) { if (MM.layers.tool.raster) MM.layers.tool.raster.setOpacity(v); });
+    MM.mapOpacity([{ onInput: function (v) { if (MM.layers.tool.raster) MM.layers.tool.raster.setOpacity(v); } }], 'Layer Transparency');
     ui.status = add(el('div')); setStatus(ui.status, 'Loading raster...', '#888', true);
     ui.prompt = add(el('div', 'pv-prompt', 'Click within the marsh to see time series')); ui.prompt.style.display = 'none';
     thin();
@@ -282,7 +282,7 @@
     creatorHeader('Raster Creator - Analyze Mode'); MM.addSwitcher('raster_creator');
     add(el('div', 'pv-small', 'Date Range: ' + C.start + ' to ' + C.end)); add(el('div', 'pv-small', 'Statistic: ' + C.stat)); add(el('div', 'pv-small', 'Stretch: ' + C.vis[0].toFixed(4) + ' to ' + C.vis[1].toFixed(4)));
     thin('navy');
-    ui.opacity = MM.slider('Raster Opacity:', function (v) { if (MM.layers.tool.custom) MM.layers.tool.custom.setOpacity(v); });
+    ui.opacity = MM.mapOpacity([{ onInput: function (v) { if (MM.layers.tool.custom) MM.layers.tool.custom.setOpacity(v); } }], 'Layer Transparency');
     add(el('div', 'pv-prompt', 'Click within the marsh to see time series'));
     thin();
     coordinateTools(function (ll) { creatorPoint(ll); });

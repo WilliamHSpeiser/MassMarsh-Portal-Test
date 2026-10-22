@@ -68,7 +68,7 @@
   function header(modeLabel) {
     ui = {}; MM.clearSide(); MM.titlePanel('Ditch Viewer'); MM.addSwitcher('ditch_viewer');
     add(el('div', 'pv-h', modeLabel)); add(el('div', 'pv-small', 'Satellite: Landsat | Index: ' + S.opts.index));
-    thin('navy'); MM.slider('Ditch Layer Opacity:', function (v) { if (MM.layers.tool.ditches) MM.layers.tool.ditches.setStyle({ opacity: v }); });
+    thin('navy'); MM.mapOpacity([{ onInput: function (v) { if (MM.layers.tool.ditches) MM.layers.tool.ditches.setStyle({ opacity: v }); } }], 'Layer Transparency');
     ui.status = add(el('div')); setStatus(ui.status, 'Loading ditches...', '#888', true);
   }
 

@@ -143,7 +143,7 @@
     ui = {}; MM.clearSide(); MM.titlePanel('<i>Your</i> Data Viewer', 'beta'); MM.addSwitcher('data_viewer');
     add(el('div', 'pv-h', 'Your Features')); add(el('div', 'pv-small', 'Satellite: ' + S.opts.satellite + ' | Index: ' + S.opts.index + ' | Season: ' + V.season.label));
     columnInputs();
-    thin('navy'); MM.slider('Feature Layer Opacity:', setOpacity);
+    thin('navy'); MM.mapOpacity([{ onInput: setOpacity }], 'Layer Transparency');
     ui.status = add(el('div')); setStatus(ui.status, 'Computing trajectories...', '#888', true);
   }
   function initiate() {

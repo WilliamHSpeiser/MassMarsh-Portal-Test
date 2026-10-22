@@ -68,7 +68,7 @@
   function header(modeLabel) {
     ui = {}; MM.clearSide(); MM.titlePanel('Pool Viewer'); MM.addSwitcher('pool_viewer');
     add(el('div', 'pv-h', modeLabel)); add(el('div', 'pv-small', 'Satellite: ' + S.opts.satellite + ' | Index: MNDWI | Season: ' + P.season.label));
-    thin('navy'); MM.slider('Pool Layer Opacity:', setOpacity);
+    thin('navy'); MM.mapOpacity([{ onInput: setOpacity }], 'Layer Transparency');
     ui.status = add(el('div')); setStatus(ui.status, 'Loading pools...', '#888', true);
   }
   function scenesCaption() { var sk = chartSeason(), k = sk + (s2() ? '_s2' : ''); return (s2() ? 'Sentinel-2A/B/C (2015-present' : 'Landsat 5-9 (1985-present') + (sk === 'summer' ? ', Jun-Aug' : '') + ') | ' + (P.scenes && P.scenes[k] ? P.scenes[k] : '?') + ' images'; }

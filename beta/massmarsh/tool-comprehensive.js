@@ -70,8 +70,7 @@
     else { note.textContent = poolFallbackText(); note.style.color = '#e65100'; }
     ui.toggle = add(button('Toggle Polygon On', togglePolygons)); ui.toggle.disabled = true;
     ui.polySel.addEventListener('change', onPolygonTypeChange);
-    ui.opacity = MM.slider('Raster Opacity:', function (v) { if (MM.layers.tool.slope) MM.layers.tool.slope.setOpacity(v); });
-    thin();
+    ui.opacity = MM.mapOpacity([{ onInput: function (v) { if (MM.layers.tool.slope) MM.layers.tool.slope.setOpacity(v); } }], 'Layer Transparency');
     var cb = add(el('label', 'pv-check')); ui.naip = el('input'); ui.naip.type = 'checkbox'; cb.appendChild(ui.naip); cb.appendChild(document.createTextNode('NAIP Image'));
     ui.naipPanel = add(el('div')); ui.naipPanel.style.cssText = 'margin:0 0 10px 20px;display:none'; var yr = el('div', 'pv-row'); yr.appendChild(el('span', 'pv-small', 'Year:')); ui.naipYear = MM.select(['Loading...'], 'Loading...', '150px'); ui.naipYear.disabled = true; yr.appendChild(ui.naipYear); ui.naipPanel.appendChild(yr);
     ui.naip.addEventListener('change', function () { ui.naipPanel.style.display = ui.naip.checked ? '' : 'none'; if (!ui.naip.checked) { MM.removeToolLayer('naip'); ui.naipYear.value = ''; } });
