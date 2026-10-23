@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MassMarsh Pool Viewer</title>
+  <meta name="description" content="MassMarsh Pool Viewer: Landsat and Sentinel-2 MNDWI time series and trends for salt marsh pools, served from the MassMarsh servers.">
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,400;0,700;1,400;1,700&display=swap">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="pool-viewer.css">
+  <link rel="stylesheet" href="massmarsh/portal.css">
+  <!-- Google tag (gtag.js): the same analytics property as the previous portal page -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-YEX1HRQN48"></script>
+  <script>window.dataLayer = window.dataLayer || []; function gtag(){dataLayer.push(arguments);} gtag('js', new Date()); gtag('config', 'G-YEX1HRQN48');</script>
+  <style>
+    /* header laid out like the Earth Engine app on massmarshviewer.com: 70 px, #fafafa, 50 px logo, 400 x 38 white rounded search box */
+    .mm-header { background: #fafafa; border-bottom: 1px solid #e0e0e0; height: 70px; position: sticky; top: 0; z-index: 1200; box-sizing: border-box; }
+    .mm-header-inner { height: 100%; display: flex; align-items: center; padding: 0 16px; box-sizing: border-box; }
+    .mm-banner { flex: 0 1 auto; min-width: 0; overflow: hidden; }
+    .mm-banner img { height: 50px; width: auto; display: block; padding-right: 20px; box-sizing: content-box; }
+    .mm-search { position: relative; display: flex; align-items: center; flex: 0 1 400px; min-width: 120px; height: 38px; background: #fff; border: 0; border-radius: 8px; padding: 0; margin: 0; color: rgba(0,0,0,0.87); box-sizing: border-box; }
+    .mm-search-icon { flex: 0 0 auto; width: 20px; height: 20px; margin: 0 14px; color: rgba(0,0,0,0.87); }
+    .mm-search-input { flex: 1 1 auto; min-width: 0; height: 35px; border: 0; outline: none; background: #fff; border-radius: 8px; font: 14px Arial, sans-serif; color: #000; padding: 1px 2px; margin: 0; }
+    .mm-search-input::placeholder { color: #757575; }
+    .mm-search-input::-webkit-search-cancel-button { -webkit-appearance: none; }
+    .mm-search .pv-search-dd { top: 38px; left: 0; width: 100%; min-width: 260px; border-color: #ccc; border-radius: 0; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+    .mm-header-right { margin-left: auto; display: flex; align-items: center; gap: 14px; font-size: 13px; color: #334155; white-space: nowrap; padding-left: 16px; }
+    .mm-header-right a { color: #334155; text-decoration: none; } .mm-header-right a:hover { color: #881c1c; text-decoration: underline; }
+    .mm-beta { background: #881c1c; color: #fff; border-radius: 4px; padding: 2px 8px; font-weight: 600; letter-spacing: 0.04em; font-size: 12px; }
+    @media (max-width: 700px) { .mm-header { height: 56px; } .mm-banner img { height: 36px; padding-right: 10px; } .mm-search { height: 34px; } .mm-search-icon { margin: 0 8px; } .mm-header-right { font-size: 12px; gap: 8px; padding-left: 8px; } }
+  </style>
+</head>
+<body>
+
+  <header class="site-header mm-header" id="site-header">
+    <div class="mm-header-inner">
+      <a href="./" rel="home" class="mm-banner" title="MassMarsh Remote Sensing Portal home"><img src="assets/TimeSeriesBanner.png" alt="University of Massachusetts Amherst, Massachusetts Geological Survey, MassMarsh, MassDEP"></a>
+      <form class="mm-search" role="search" onsubmit="return false"><svg class="mm-search-icon" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" fill="currentColor"/></svg><input id="mm-search-input" class="mm-search-input" type="search" placeholder="Search places" aria-label="Search places" autocomplete="off"></form>
+      <div class="mm-header-right"></div>
+    </div>
+  </header>
+
+  <div class="pv-layout">
+    <aside id="pv-side" class="pv-side"></aside>
+    <div id="map" class="pv-map"></div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/proj4@2.11.0/dist/proj4.js"></script>
+  <script src="https://unpkg.com/pmtiles@3.2.1/dist/pmtiles.js"></script>
+  <script>window.MM_DATA_BASE = 'data/';</script>
+  <script src="massmarsh/core.js?v=20261020v"></script>
+  <script src="massmarsh/tool-pool.js?v=20261020v"></script>
+  <script>MM.boot({ only: 'pool_viewer' });</script>
+</body>
+</html>
