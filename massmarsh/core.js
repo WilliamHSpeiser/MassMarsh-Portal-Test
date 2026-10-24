@@ -18,7 +18,7 @@
 window.MM = (function () {
   'use strict';
 
-  var HOSTS = ['https://marsh01.ecs.umass.edu/share/massmarsh_rs/', 'https://marsh02.ecs.umass.edu/share/massmarsh_rs/'];
+  var HOSTS = ['https://marsh01.ecs.umass.edu/share/massmarsh_rs/', 'https://marsh02.ecs.umass.edu:8443/share/massmarsh_rs/'];   // marsh02 answers on 8443 (IIS owns 443 there); its folder is mirrored nightly from marsh01
   var LOCAL = /[?&]local=1/.test(location.search);           // workstation symlinks instead of the servers
   var DATA_BASE = window.MM_DATA_BASE || '../data/';            // repo data folder relative to the page (the beta site sets window.MM_DATA_BASE = 'data/')
   var LOCAL_HOST = DATA_BASE + 'server/';
@@ -104,7 +104,28 @@ window.MM = (function () {
     });
   }
   var DATA_VERSION = '20261020i';          // bumped when the repo data files change (server-side files are not versioned)
-  function getJSON(url) { var u = url.indexOf(DATA_BASE) === 0 ? url + '?v=' + DATA_VERSION : url; return fetch(u).then(function (r) { if (!r.ok) throw new Error(r.status + ' ' + url); return r.json(); }); }
+  function getJSON(url) {
+    var u = url.indexOf(DATA_BASE) === 0 ? url + '?v=' + DATA_VERSION : url;
+    return fetch(u).then(function (r) { if (!r.ok) throw new Error(r.status + ' ' + url); return r.json(); }).catch(function (e) {
+      // mid-session failover: when the MassMarsh server that answered at load stops responding (network error or 5xx),
+      // probe the other server and repeat the request there; later requests follow S.serverBase automatically
+      var onServer = !LOCAL && S.serverBase && url.indexOf(S.serverBase) === 0, netErr = !(e && /^[0-9]{3} /.test(e.message)) || /^5[0-9]{2} /.test(e && e.message || '');
+      if (!onServer || !netErr) throw e;
+      return switchServer().then(function (base) { if (!base) throw e; return fetch(base + url.slice(S.failedBase.length)).then(function (r) { if (!r.ok) throw new Error(r.status + ' ' + url); return r.json(); }); });
+    });
+  }
+  var switching = null;
+  function switchServer() {                                   // try the other hosts once (shared promise while a switch is in flight)
+    if (switching) return switching;
+    var from = S.serverBase; S.failedBase = from; var others = HOSTS.filter(function (h) { return h !== from; });
+    switching = (function probe(i) {
+      if (i >= others.length) return Promise.resolve(null);
+      return fetch(others[i] + CUBES['Landsat'].dir + 'cube_index.json?t=' + Date.now()).then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+        .then(function (idx) { S.serverBase = others[i]; S.cubeIndex = idx; S.cubes['Landsat'] = idx; console.warn('MassMarsh server switched to ' + others[i]); return others[i]; })
+        .catch(function () { return probe(i + 1); });
+    })(0).then(function (base) { switching = null; return base; }, function () { switching = null; return null; });
+    return switching;
+  }
   function load(name) {
     if (name === 'pools') return loadPoolsFor(S.selection ? S.selection.bbox : [-71.3, 41.2, -69.9, 42.9]);
     if (cache[name]) return cache[name];
