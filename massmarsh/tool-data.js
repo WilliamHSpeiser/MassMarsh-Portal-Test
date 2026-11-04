@@ -151,7 +151,7 @@
     ui.prompt = add(el('div', 'pv-prompt', 'Click on a feature to see its time series')); ui.prompt.style.display = 'none';
     thin(); var holder = add(el('div'));
     V.panel = MM.seriesPanel(holder, { pointColor: '#2196F3', seriesLabel: 'Feature mean', clickWord: 'a feature',
-      titleFn: function (k) { return k === 'main' ? 'Feature Mean ' + S.opts.index + ' Time Series (' + S.opts.satellite + ')' : k === 'bp' ? S.opts.index + ' with Breakpoints (' + S.opts.satellite + ')' : S.opts.index + ' with Change Point (' + S.opts.satellite + ')'; },
+      titleFn: function (k) { return k === 'main' ? 'Feature Mean ' + S.opts.index + ' Time Series (' + MM.satTitle() + ')' : k === 'bp' ? S.opts.index + ' with Breakpoints (' + MM.satTitle() + ')' : S.opts.index + ' with Change Point (' + MM.satTitle() + ')'; },
       captionFn: function (P) { return S.opts.satellite + (S.opts.satellite === 'Landsat' ? ' 5-9 (1984-present)' : ' (2015-present)') + ' | ' + (P.nImages || '?') + ' images'; } });
     ui.swipe = add(el('div')); ui.swipe.style.margin = '10px 0';   // live imagery view of the clicked feature
     ui.legend = add(el('div')); ui.legend.style.margin = '10px 0';

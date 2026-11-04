@@ -663,7 +663,7 @@ window.MM = (function () {
     var ov = el('div', 'pv-chart-modal'); var box = el('div', 'pv-chart-modal-box'); ov.appendChild(box);
     var x = el('button', 'pv-chart-modal-x'); x.type = 'button'; x.title = 'Close'; x.innerHTML = ICONS.x; box.appendChild(x);
     var holder = el('div', 'pv-chart-modal-chart'); box.appendChild(holder);
-    var cap = container.querySelector('.pv-caption'); var capNode = cap ? el('div', cap.className, cap.textContent) : null;
+    var cap = container.querySelector('.pv-caption'); var capText = cap ? cap.textContent : container._pngCaption; var capNode = capText ? el('div', 'pv-caption' + (cap && /red/.test(cap.className) ? ' red' : ''), capText) : null;   // the panel shows the save hint; the expanded view and the PNG carry the scene caption
     var foot = el('div', 'pv-chart-modal-foot'); foot.appendChild(button('Download PNG', function () { downloadChart(holder, capNode, a.title); })); foot.appendChild(button('Download CSV', function () { downloadChartCSV(container); })); box.appendChild(foot);
     document.body.appendChild(ov);
     var h = Math.max(160, box.clientHeight - foot.offsetHeight - (capNode ? 26 : 0) - 56);   // chart fills the box above the Download row
@@ -705,6 +705,7 @@ window.MM = (function () {
 
   // ---------- series panel: info + chart + breakpoints + change point (shared by the mono analyses) ----------
   // opts: { titleFn(kind) -> chart title for 'main' | 'bp' | 'cp', captionFn() -> footer text, pointColor, seriesLabel, clickWord }
+  function satTitle(sat) { sat = sat || S.opts.satellite; return sat === 'Landsat' ? 'Landsat 5-9' : sat; }   // chart titles name the Landsat generations
   function seriesPanel(parent, opts) {
     var P = { pts: null, breakpoints: [], nImages: null };
     P.info = el('div'); P.chart = el('div'); P.custom = el('div'); P.custom.style.display = 'none'; parent.appendChild(P.info); parent.appendChild(P.chart); parent.appendChild(P.custom);
@@ -736,9 +737,10 @@ window.MM = (function () {
     P.trendInfo = el('div'); P.custom.appendChild(P.trendInfo);
     P.trendBtns = el('div', 'pv-row'); P.addTrend = button('Add Second Trend', addBreakpoint); P.addTrend.disabled = true; P.clearTrend = button('Clear All', clearBreakpoints); P.clearTrend.disabled = true; P.trendBtns.appendChild(P.addTrend); P.trendBtns.appendChild(P.clearTrend); P.custom.appendChild(P.trendBtns);
     P.custom.appendChild(el('div', 'pv-thin')); P.custom.appendChild(el('div', 'pv-h', 'Change Point Detection:'));
-    P.calc = button('Calculate', detectChangePoint); P.calc.disabled = true; P.custom.appendChild(P.calc); P.cpInfo = el('div'); P.custom.appendChild(P.cpInfo);
-    P.custom.appendChild(el('div', 'pv-note pv-save-hint', '(Click icon next to chart title to save as image or csv)'));
-    function resetButtons() { P.addTrend.disabled = true; P.addTrend.textContent = 'Add Second Trend'; P.clearTrend.disabled = true; P.trendBtns.style.display = ''; P.calc.disabled = true; P.breakpoints = []; }
+    P.calc = button('Calculate', function () { if (P.cpShown) clearChangePoint(); else detectChangePoint(); }); P.calc.disabled = true; P.custom.appendChild(P.calc); P.cpInfo = el('div'); P.custom.appendChild(P.cpInfo);
+    function resetButtons() { P.addTrend.disabled = true; P.addTrend.textContent = 'Add Second Trend'; P.clearTrend.disabled = true; P.trendBtns.style.display = ''; P.calc.disabled = true; P.breakpoints = []; cpReset(); }
+    function cpReset() { P.cpShown = false; P.calc.textContent = 'Calculate'; }
+    function clearChangePoint() { cpReset(); P.cpInfo.innerHTML = ''; clearBreakpoints(); }   // back to the main chart; Calculate is available again
     P.setLoading = function (label) { P.custom.style.display = 'none'; P.info.innerHTML = ''; P.chart.innerHTML = ''; P.trendInfo.innerHTML = ''; P.cpInfo.innerHTML = ''; resetButtons(); P.pts = null;
       if (label) { var ld = el('div', '', label); ld.style.cssText = 'color:#c00;font-size:13px;font-weight:bold'; P.info.appendChild(ld); } };
     P.clear = function () { P.setLoading(null); };
@@ -754,10 +756,11 @@ window.MM = (function () {
       if (P.tideSel.value !== 'all') { applyTide(); return; }                 // keep an active tide subset across re-runs (season / raw toggles)
       P.tideNote.textContent = ''; drawMain(); P.addTrend.disabled = false; P.calc.disabled = false;
     };
-    function drawMain() { var pts = P.pts; var ds = [scatterDs(pts, opts.pointColor || '#9c27b0', opts.seriesLabel || 'Mean', 3)]; var tr = trendDataset(pts, '#e63946', '_trend', 2); if (tr) ds.push(tr); drawChart(P.chart, opts.titleFn('main'), ds, 280, 'none'); caption(P.chart, opts.captionFn(P)); }
+    function drawMain() { var pts = P.pts; var ds = [scatterDs(pts, opts.pointColor || '#9c27b0', opts.seriesLabel || 'Mean', 3)]; var tr = trendDataset(pts, '#e63946', '_trend', 2); if (tr) ds.push(tr); drawChart(P.chart, opts.titleFn('main'), ds, 280, 'none'); P.chart._pngCaption = opts.captionFn(P); P.chart.appendChild(el('div', 'pv-note pv-save-hint', '(Click icon next to chart title to save as image or csv)')); }
     function addBreakpoint() {
       var msg = function (t) { P.trendInfo.appendChild(el('div', 'pv-err', t)); };
       if (!P.pts || !P.pts.length) return msg('No time series data available.');
+      if (P.cpShown) { cpReset(); P.cpInfo.innerHTML = ''; }
       if (P.breakpoints.length >= 4) return msg('Maximum of 4 breakpoints reached.');
       var d = parseDate(P.bpInput.value.trim()); if (!d) return msg('Could not read that date (try 2015-06-01, 6/1/2015 or June 1, 2015).');
       if (P.breakpoints.some(function (b) { return b.dateStr === d; })) return msg('This breakpoint already exists.');
@@ -802,6 +805,7 @@ window.MM = (function () {
       var t1 = trendDataset(before, '#0D47A1', 'Before Trend', 2), t2 = trendDataset(after, '#2E7D32', 'After Trend', 2); if (t1) ds.push(t1); if (t2) ds.push(t2);
       drawChart(P.chart, opts.titleFn('cp'), ds, 300, 'bottom');
       caption(P.chart, 'Change point: ~' + (START_YEAR + best.years).toFixed(0) + ' | ' + n + ' total observations', true);
+      P.cpShown = true; P.calc.textContent = 'Clear';
     }
     return P;
   }
@@ -1701,7 +1705,7 @@ window.MM = (function () {
     removeLayer: removeLayer, addToolLayer: addToolLayer, removeToolLayer: removeToolLayer, clearToolLayers: clearToolLayers, clearAllLayers: clearAllLayers,
     armDraw: armDraw, stopDraw: stopDraw, isDrawing: isDrawing, setClickHandler: setClickHandler, addSwitcher: addSwitcher, removeSwitcher: removeSwitcher,
     linearFit: linearFit, xy: xy, fitSeries: fitSeries, percentile: percentile, nearestRank: nearestRank, rampColor: rampColor, hexToRgb: hexToRgb, seasonFilter: seasonFilter, seasonFilterKey: seasonFilterKey, glowLayer: glowLayer, ICONS: ICONS, limitIndexes: limitIndexes, imagerySwipe: imagerySwipe, stopSwipes: stopSwipes, tideStationFor: tideStationFor, tideTable: tideTable, TIDE_STATIONS: TIDE_STATIONS, dayPts: dayPts,
-    trendDataset: trendDataset, scatterDs: scatterDs, drawChart: drawChart, downloadChartCSV: downloadChartCSV, downloadChartPNG: downloadChart, chartCSV: chartCSV, csvText: csvText, downloadText: downloadText, safeName: safeName, caption: caption, seriesPanel: seriesPanel, legendBlock: legendBlock, mapLegend: mapLegend, mapOpacity: mapOpacity, imageryCatalog: imageryCatalog, setBasemap: setBasemap, startMeasure: startMeasure, busy: busy, listservDialog: listservDialog,
+    trendDataset: trendDataset, scatterDs: scatterDs, drawChart: drawChart, satTitle: satTitle, downloadChartCSV: downloadChartCSV, downloadChartPNG: downloadChart, chartCSV: chartCSV, csvText: csvText, downloadText: downloadText, safeName: safeName, caption: caption, seriesPanel: seriesPanel, legendBlock: legendBlock, mapLegend: mapLegend, mapOpacity: mapOpacity, imageryCatalog: imageryCatalog, setBasemap: setBasemap, startMeasure: startMeasure, busy: busy, listservDialog: listservDialog,
     cubeReady: cubeReady, cubeAvailable: cubeAvailable, cube: cube, CUBES: CUBES, pkey: pkey, platName: platName, loadBlock: loadBlock, cubeLocate: cubeLocate, cubeLocateUtm: cubeLocateUtm, pixelSeries: pixelSeries, pixelSeriesFromBlock: pixelSeriesFromBlock, meanSeries: meanSeries, pool: pool, gridMask: gridMask, cubePixelsInMask: cubePixelsInMask, selectionMask: selectionMask, bandIndex: bandIndex,
     POOL_DS: POOL_DS, POOL_PROVENANCE: POOL_PROVENANCE, poolDataset: poolDataset, poolSlopeProps: poolSlopeProps, poolSlopeOf: poolSlopeOf, poolStatsLine: poolStatsLine, poolSeriesPts: poolSeriesPts, seriesDir: seriesDir, enableSentinel2: enableSentinel2, loadServerRaster: loadServerRaster, loadSlopeRaster: loadSlopeRaster,
     compareOn: compareOn, compareOff: compareOff,

@@ -79,7 +79,7 @@
     thin();
     var holder = add(el('div'));
     D.panel = MM.seriesPanel(holder, { pointColor: '#2196F3', seriesLabel: 'Ditch mean', clickWord: 'a ditch',
-      titleFn: function (k) { return k === 'main' ? 'Ditch Mean ' + S.opts.index + ' Time Series (Landsat)' : k === 'bp' ? S.opts.index + ' with Custom Breakpoints (Landsat)' : S.opts.index + ' with Change Point (Landsat)'; },
+      titleFn: function (k) { return k === 'main' ? 'Ditch Mean ' + S.opts.index + ' Time Series (Landsat 5-9)' : k === 'bp' ? S.opts.index + ' with Custom Breakpoints (Landsat 5-9)' : S.opts.index + ' with Change Point (Landsat 5-9)'; },
       captionFn: function (P) { return 'Landsat 5-9 (1984-present) | ' + (P.nImages || '?') + ' images'; } });
     ui.swipe = add(el('div')); ui.swipe.style.margin = '10px 0';         // imagery swipe of the selected ditch (under the chart notes)
     ui.legend = add(el('div')); ui.legend.style.margin = '10px 0';
@@ -153,7 +153,7 @@
     if (!loaded.length) { if (ui.chart._chart) { ui.chart._chart.destroy(); ui.chart._chart = null; } ui.chart.innerHTML = ''; return ui.chart.appendChild(el('div', 'pv-grey', D.multi.length ? 'Loading ditch data...' : 'Select ditches to see their time series')); }
     var s = D.filter.start ? Date.parse(D.filter.start + 'T00:00:00Z') : -Infinity, e = D.filter.end ? Date.parse(D.filter.end + 'T00:00:00Z') : Infinity; var ds = [];
     loaded.forEach(function (m) { var pts = m.pts.filter(function (p) { return p.ms >= s && p.ms < e; }); ds.push(MM.scatterDs(pts, m.color, m.title, 3)); var tr = MM.trendDataset(pts, m.color, '_' + m.title, 2); if (tr) ds.push(tr); });
-    MM.drawChart(ui.chart, 'Ditch Time Series Comparison (Landsat ' + S.opts.index + ')', ds, 300, loaded.length > 1 ? 'top' : 'none');
+    MM.drawChart(ui.chart, 'Ditch Time Series Comparison (Landsat 5-9 ' + S.opts.index + ')', ds, 300, loaded.length > 1 ? 'top' : 'none');
     var cap = 'Landsat 5-9 (1984-present) | ' + loaded.length + ' ditch' + (loaded.length === 1 ? '' : 'es'); if (D.filter.start || D.filter.end) cap += ' | Filtered: ' + (D.filter.start || 'start') + ' to ' + (D.filter.end || 'present');
     MM.caption(ui.chart, cap);
   }

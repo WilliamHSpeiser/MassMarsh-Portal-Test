@@ -80,7 +80,7 @@
     var holder = add(el('div'));
     R.chartSeason = S.opts.season.key; R.last = null;          // scenes shown in the chart (defaults to the settings choice); last query for a re-run
     R.panel = MM.seriesPanel(holder, { pointColor: '#9c27b0', seriesLabel: 'Pixel', clickWord: 'the map',
-      titleFn: function (k) { var lab = R.seriesLabel || 'Pixel'; return k === 'main' ? lab + ' ' + S.opts.index + ' Time Series (' + S.opts.satellite + ')' : k === 'bp' ? S.opts.index + ' with Custom Breakpoints (' + S.opts.satellite + ')' : lab + ' ' + S.opts.index + ' with Change Point (' + S.opts.satellite + ')'; },
+      titleFn: function (k) { var lab = R.seriesLabel || 'Pixel'; return k === 'main' ? lab + ' ' + S.opts.index + ' Time Series (' + MM.satTitle() + ')' : k === 'bp' ? S.opts.index + ' with Custom Breakpoints (' + MM.satTitle() + ')' : lab + ' ' + S.opts.index + ' with Change Point (' + MM.satTitle() + ')'; },
       captionFn: function (P) { return 'Landsat 5-9 (1985-present' + MM.SEASONS[R.chartSeason || S.opts.season.key].word + ') | ' + (P.nImages || '?') + ' images'; } });
     ui.swipe = add(el('div')); ui.swipe.style.margin = '10px 0';         // imagery swipe of the clicked pixel / drawn region
     ui.legend = add(el('div')); ui.legend.style.margin = '10px 0';

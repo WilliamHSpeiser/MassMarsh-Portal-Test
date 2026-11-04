@@ -13,7 +13,7 @@
   var ui = {};
   function prop(name) { return MM.poolSlopeProps(S.opts.satellite, P.season.key)[name]; }     // stored slope fields of the active satellite / season
   function s2() { return S.opts.satellite === 'Sentinel-2'; }
-  function satLabel() { return s2() ? 'Sentinel-2' : 'Landsat'; }
+  function satLabel() { return s2() ? 'Sentinel-2' : 'Landsat 5-9'; }
   function valueLabel(pts) { return 'MNDWI'; }
   function slopeOf(p) { var v = p[prop('sl')]; return (v === null || v === undefined) ? null : v; }
   function clearTool() { MM.clearToolLayers(); MM.stopDraw(); MM.setClickHandler(null); P.loading = false; P.reqId++; P.multi = []; P.multiNext = 1; P.panel = null; }

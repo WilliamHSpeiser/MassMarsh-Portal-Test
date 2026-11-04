@@ -193,7 +193,7 @@
     var info = [el('div', 'pv-h lg', 'Pixel Information'), el('div', 'pv-small', 'Lat: ' + latlng.lat.toFixed(5) + ', Lon: ' + latlng.lng.toFixed(5)), el('div', 'pv-h', 'Mean ' + S.opts.index + ' Slope: ' + rv.slope.toFixed(6) + unit())];
     if (rv.obs !== null) info.push(el('div', 'pv-small', 'Valid observations: ' + Math.round(rv.obs)));
     ui.chart.appendChild(el('div', 'pv-grey', 'Loading time series chart...'));
-    MM.cubeReady().then(function () { return MM.pixelSeries(latlng.lng, latlng.lat, S.opts.index); }).then(function (res) { finishSeries(req, res && res.pts ? res.pts : [], info, 'Pixel ' + S.opts.index + ' Time Series (' + S.opts.satellite + ')', { type: 'pixel', prefix: 'Pixel ' }); })
+    MM.cubeReady().then(function () { return MM.pixelSeries(latlng.lng, latlng.lat, S.opts.index); }).then(function (res) { finishSeries(req, res && res.pts ? res.pts : [], info, 'Pixel ' + S.opts.index + ' Time Series (' + MM.satTitle() + ')', { type: 'pixel', prefix: 'Pixel ' }); })
       .catch(function (e) { if (req !== C.reqId) return; C.loading = false; ui.chart.innerHTML = ''; ui.chart.appendChild(el('div', 'pv-err', 'Error loading time series: ' + e.message)); });
   }
   // mean series over the cube pixels of a feature (pools: the precomputed summer MNDWI series when the index is MNDWI)
@@ -227,7 +227,7 @@
     }
     MM.addToolLayer('marker', L.geoJSON(f, { renderer: MM.canvas, interactive: false, style: { color: 'yellow', weight: 3, fillColor: '#FFFF00', fillOpacity: 0.25 } }));
     MM.withTimeout(featureSeries(f, isPool), 60000).then(function (res) {
-      var title = isPool ? 'Pool Mean ' + S.opts.index + ' Time Series (' + S.opts.satellite + ', summer Jun-Aug scenes)' : featureType + ' Mean ' + S.opts.index + ' Time Series (' + S.opts.satellite + ')';
+      var title = isPool ? 'Pool Mean ' + S.opts.index + ' Time Series (' + MM.satTitle() + ', summer Jun-Aug scenes)' : featureType + ' Mean ' + S.opts.index + ' Time Series (' + MM.satTitle() + ')';
       finishSeries(req, res.pts, info, title, { type: 'feature', prefix: featureType + ' Mean ', isPool: isPool }); })
       .catch(function (e) { if (req !== C.reqId) return; C.loading = false; ui.chart.innerHTML = ''; ui.chart.appendChild(el('div', 'pv-err', 'Error loading time series: ' + e.message)); });
   }
@@ -251,7 +251,7 @@
     if (sel.clip) { var out = {}; Object.keys(px.byBlock).forEach(function (k) { var keep = px.byBlock[k].filter(function (p) { var ll = MM.fromUtm(p.E, p.N); return MM.pointInPolys(ll[0], ll[1], sel.clip); }); if (keep.length) out[k] = keep; }); px.byBlock = out; }
     var keys = Object.keys(px.byBlock); if (!keys.length) { finishSeries(req, [], info, '', null); return; }
     if (keys.length > 150) { info.push(el('div', 'pv-warn', 'Region too large for the averaged series (' + keys.length + ' blocks, max 150); showing statistics only.')); finishSeries(req, [], info, '', null); return; }
-    MM.meanSeries(px.byBlock, S.opts.index).then(function (res) { finishSeries(req, res.pts, info, 'Region Mean ' + S.opts.index + ' Time Series (' + S.opts.satellite + ')', { type: 'region', prefix: 'Region Mean ' }); })
+    MM.meanSeries(px.byBlock, S.opts.index).then(function (res) { finishSeries(req, res.pts, info, 'Region Mean ' + S.opts.index + ' Time Series (' + MM.satTitle() + ')', { type: 'region', prefix: 'Region Mean ' }); })
       .catch(function (e) { if (req !== C.reqId) return; C.loading = false; ui.chart.appendChild(el('div', 'pv-err', 'Error loading time series: ' + e.message)); });
   }
   function goToLocation() {
