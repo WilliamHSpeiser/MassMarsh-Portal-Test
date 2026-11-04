@@ -149,7 +149,6 @@
     ui.bulk.appendChild(el('div', 'pv-p', 'Download your features with the trend as a new column (' + metricKey() + '_m, slope per year; ' + metricKey() + '_n, scenes used):'));
     var dl = el('div', 'pv-row'); ui.bulk.appendChild(dl);
     dl.appendChild(button('GeoJSON', function () { exportFeatures('geojson'); }, 'small')); dl.appendChild(button('Shapefile', exportShapefile, 'small')); dl.appendChild(button('Attribute table (CSV)', function () { exportFeatures('csv'); }, 'small')); dl.appendChild(button('All time series (CSV)', bulkCSV, 'small'));
-    ui.bulk.appendChild(el('div', 'pv-note', 'GeoJSON and CSV keep every original attribute. Shapefile column names are limited to 10 characters, so the trend columns become ' + shortMetric('m') + ' (slope per year) and ' + shortMetric('n') + ' (scenes used), and longer attribute names are shortened the same way; points, lines and polygons go into separate layers of one zip. The time-series file has one row per scene per feature.'));
     ui.exportNote = el('div', 'pv-note'); ui.bulk.appendChild(ui.exportNote);
   }
   function initiate() {
