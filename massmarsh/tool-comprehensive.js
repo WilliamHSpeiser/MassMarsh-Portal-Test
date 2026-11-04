@@ -86,7 +86,7 @@
     var dr = add(el('div', 'pv-row'));
     var rectBtn = button('Rectangle', function () { startDraw('rectangle', rectBtn); }, 'small'), polyBtn = button('Polygon', function () { startDraw('polygon', polyBtn); }, 'small');
     dr.appendChild(rectBtn); dr.appendChild(polyBtn); dr.appendChild(button('Clear', clearDrawing, 'small'));
-    ui.status = add(el('div')); ui.info = add(el('div')); ui.chart = add(el('div'));
+    ui.status = add(el('div')); ui.info = add(el('div')); ui.chart = add(el('div')); ui.swipe = add(el('div')); ui.swipe.style.margin = '10px 0';   // live imagery view of the inspected pixel, feature or region
     thin();
     add(el('div', 'pv-h', 'Specific Date Range Trend:'));
     var tr = add(el('div', 'pv-row')); tr.appendChild(el('span', 'pv-small', 'Start:')); ui.start = el('input'); ui.start.type = 'text'; ui.start.placeholder = 'YYYY-MM-DD'; ui.start.value = '2000-01-01'; ui.start.style.width = '100px'; tr.appendChild(ui.start);
@@ -183,6 +183,7 @@
     if (req !== C.reqId) return; C.loading = false; ui.info.innerHTML = ''; infoNodes.forEach(function (n) { ui.info.appendChild(n); }); ui.chart.innerHTML = '';
     if (!pts || !pts.length) { ui.chart.appendChild(el('div', 'pv-err', state && state.isPool ? 'No summer ' + S.opts.satellite + ' scenes for this pool.' : 'No time series data available.')); return; }
     C.series = { pts: pts, title: title, state: state }; drawSeriesChart(); ui.addTrend.disabled = false; ui.clearTrend.disabled = false; ui.csv.disabled = false;
+    if (ui.swipe) { if (state && state.geometry) MM.imagerySwipe(ui.swipe, { geometry: state.geometry, name: state.name || 'Selection', pad: state.type === 'pixel' ? 60 : 30, minBox: 150 }); else ui.swipe.innerHTML = ''; }
   }
   function drawSeriesChart() { var s = C.series; var ds = [MM.scatterDs(s.pts, '#9c27b0', 'Series', 3)]; var tr = MM.trendDataset(s.pts, '#e63946', '_trend', 2); if (tr) ds.push(tr); MM.drawChart(ui.chart, s.title, ds, 280, 'none'); }
   function showPixel(latlng) {
@@ -193,7 +194,7 @@
     var info = [el('div', 'pv-h lg', 'Pixel Information'), el('div', 'pv-small', 'Lat: ' + latlng.lat.toFixed(5) + ', Lon: ' + latlng.lng.toFixed(5)), el('div', 'pv-h', 'Mean ' + S.opts.index + ' Slope: ' + rv.slope.toFixed(6) + unit())];
     if (rv.obs !== null) info.push(el('div', 'pv-small', 'Valid observations: ' + Math.round(rv.obs)));
     ui.chart.appendChild(el('div', 'pv-grey', 'Loading time series chart...'));
-    MM.cubeReady().then(function () { return MM.pixelSeries(latlng.lng, latlng.lat, S.opts.index); }).then(function (res) { finishSeries(req, res && res.pts ? res.pts : [], info, 'Pixel ' + S.opts.index + ' Time Series (' + MM.satTitle() + ')', { type: 'pixel', prefix: 'Pixel ' }); })
+    MM.cubeReady().then(function () { return MM.pixelSeries(latlng.lng, latlng.lat, S.opts.index); }).then(function (res) { finishSeries(req, res && res.pts ? res.pts : [], info, 'Pixel ' + S.opts.index + ' Time Series (' + MM.satTitle() + ')', { type: 'pixel', prefix: 'Pixel ', geometry: { type: 'Point', coordinates: [latlng.lng, latlng.lat] }, name: 'Pixel ' + latlng.lat.toFixed(5) + ', ' + latlng.lng.toFixed(5) }); })
       .catch(function (e) { if (req !== C.reqId) return; C.loading = false; ui.chart.innerHTML = ''; ui.chart.appendChild(el('div', 'pv-err', 'Error loading time series: ' + e.message)); });
   }
   // mean series over the cube pixels of a feature (pools: the precomputed summer MNDWI series when the index is MNDWI)
@@ -228,7 +229,7 @@
     MM.addToolLayer('marker', L.geoJSON(f, { renderer: MM.canvas, interactive: false, style: { color: 'yellow', weight: 3, fillColor: '#FFFF00', fillOpacity: 0.25 } }));
     MM.withTimeout(featureSeries(f, isPool), 60000).then(function (res) {
       var title = isPool ? 'Pool Mean ' + S.opts.index + ' Time Series (' + MM.satTitle() + ', summer Jun-Aug scenes)' : featureType + ' Mean ' + S.opts.index + ' Time Series (' + MM.satTitle() + ')';
-      finishSeries(req, res.pts, info, title, { type: 'feature', prefix: featureType + ' Mean ', isPool: isPool }); })
+      finishSeries(req, res.pts, info, title, { type: 'feature', prefix: featureType + ' Mean ', isPool: isPool, geometry: f.geometry, name: featureType + (f.properties && (f.properties.id !== undefined ? ' ' + f.properties.id : f.properties.pid !== undefined ? ' ' + f.properties.pid : '') || '') }); })
       .catch(function (e) { if (req !== C.reqId) return; C.loading = false; ui.chart.innerHTML = ''; ui.chart.appendChild(el('div', 'pv-err', 'Error loading time series: ' + e.message)); });
   }
   function startDraw(shape, btn) {
@@ -251,7 +252,7 @@
     if (sel.clip) { var out = {}; Object.keys(px.byBlock).forEach(function (k) { var keep = px.byBlock[k].filter(function (p) { var ll = MM.fromUtm(p.E, p.N); return MM.pointInPolys(ll[0], ll[1], sel.clip); }); if (keep.length) out[k] = keep; }); px.byBlock = out; }
     var keys = Object.keys(px.byBlock); if (!keys.length) { finishSeries(req, [], info, '', null); return; }
     if (keys.length > 150) { info.push(el('div', 'pv-warn', 'Region too large for the averaged series (' + keys.length + ' blocks, max 150); showing statistics only.')); finishSeries(req, [], info, '', null); return; }
-    MM.meanSeries(px.byBlock, S.opts.index).then(function (res) { finishSeries(req, res.pts, info, 'Region Mean ' + S.opts.index + ' Time Series (' + MM.satTitle() + ')', { type: 'region', prefix: 'Region Mean ' }); })
+    MM.meanSeries(px.byBlock, S.opts.index).then(function (res) { finishSeries(req, res.pts, info, 'Region Mean ' + S.opts.index + ' Time Series (' + MM.satTitle() + ')', { type: 'region', prefix: 'Region Mean ', geometry: { type: 'Polygon', coordinates: rings }, name: 'Region' }); })
       .catch(function (e) { if (req !== C.reqId) return; C.loading = false; ui.chart.appendChild(el('div', 'pv-err', 'Error loading time series: ' + e.message)); });
   }
   function goToLocation() {

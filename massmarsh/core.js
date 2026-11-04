@@ -317,7 +317,8 @@ window.MM = (function () {
     g.addLayer(L.geoJSON(geom, { renderer: canvas, interactive: false, style: { color: '#00ffff', weight: opts.weight || 1.5, opacity: 1, fill: false, lineJoin: 'round' } }));
     return g;
   }
-  function drawHighlight(style, name) {                        // the selected marsh / area / units: glowing cyan outline (style argument kept for callers)
+  function drawHighlight(style, name) { var r = drawHighlightInner(style, name); if (S.hideOutline) applyOutlineVisibility(); return r; }
+  function drawHighlightInner(style, name) {                        // the selected marsh / area / units: glowing cyan outline (style argument kept for callers)
     removeLayer('highlight'); var s = S.selection; if (!s) return;
     var g = s.clip ? polysToGeoJSON(s.clip) : (s.method === 'Bounding Boxes' ? s.rectangleGeometry : s.geometry);
     layers.highlight = glowLayer(g).addTo(map);
@@ -527,6 +528,7 @@ window.MM = (function () {
         var fill = kind === 'bboxes' ? 0.06 : 0.125;
         layers.base = L.geoJSON(d, { renderer: canvas, style: { color: 'cyan', weight: 1, fillColor: '#00FFFF', fillOpacity: fill }, interactive: kind !== 'bboxes',
           onEachFeature: function (f, lyr) { if (kind !== 'bboxes') lyr.on('click', function (e) { L.DomEvent.stop(e); if (staleDraw()) stopDraw(); if (draw) return; if (kind === 'units') toggleUnit(f); else selectComplex(f, e.latlng); }); } }).addTo(map);
+        layers.base._mmFill = fill; if (S.hideUnits) applyOutlineVisibility();
         if (kind === 'bboxes') setClickHandler(function (e) { bboxClick(e, d); });
       }).catch(function (e) { setStatus(status, 'Error loading selection layer: ' + e.message, '#c00'); });
     }
@@ -640,6 +642,12 @@ window.MM = (function () {
     return { type: 'line', label: label || 'Trend', data: [{ x: EPOCH_MS + x0 * YEAR_MS, y: f.slope * x0 + f.intercept }, { x: EPOCH_MS + x1 * YEAR_MS, y: f.slope * x1 + f.intercept }], borderColor: color, borderWidth: width || 2, pointRadius: 0, fill: false, tension: 0, _fit: f };
   }
   function scatterDs(pts, color, label, size) { return { type: 'scatter', label: label, data: pts.map(function (p) { return { x: p.ms, y: p.value, plat: p.plat }; }), backgroundColor: color, borderColor: color, pointRadius: size || 3 }; }
+  var mmSlopeLabels = { id: 'mmSlopeLabels', afterDatasetsDraw: function (chart) {   // segmented trends: print each segment's slope beside its line
+    var fits = chart.data.datasets.map(function (d, i) { return d._fit && d._fit.slope !== null && d._fit.slope !== undefined && d.data && d.data.length === 2 ? { d: d, i: i } : null; }).filter(Boolean);
+    chart.$slopeLabels = fits.length >= 2 ? fits.length : 0; if (fits.length < 2) return; var ctx = chart.ctx, xs = chart.scales.x, ys = chart.scales.y, fs = (chart.options.plugins.title.font && chart.options.plugins.title.font.size) || 12;
+    ctx.save(); ctx.font = 'bold ' + Math.round(fs * 0.92) + 'px Roboto, Arial, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+    fits.forEach(function (f) { var p0 = f.d.data[0], p1 = f.d.data[1]; var x = (xs.getPixelForValue(p0.x) + xs.getPixelForValue(p1.x)) / 2, y = (ys.getPixelForValue(p0.y) + ys.getPixelForValue(p1.y)) / 2 - 6; var t = (f.d._fit.slope >= 0 ? '+' : '') + f.d._fit.slope.toFixed(4) + '/yr'; ctx.strokeText(t, x, y); ctx.fillStyle = f.d.borderColor || '#333'; ctx.fillText(t, x, y); });
+    ctx.restore(); } };
   function drawChart(container, title, datasets, height, legendPos, opt) {
     opt = opt || {}; container.innerHTML = ''; var wrap = el('div', 'pv-chart-wrap'); wrap.style.height = height + 'px'; var cv = el('canvas'); wrap.appendChild(cv); container.appendChild(wrap);
     var prev = container._chart; if (prev) { prev.destroy(); }
@@ -648,7 +656,7 @@ window.MM = (function () {
     var fs = opt.fontScale || 1;
     var idx = opt.index || S.opts.index; var lab = LABELS[idx] || ['', '']; var yr = opt.yRange || (idx === 'VV' || idx === 'VH' ? [-30, 0] : [-1, 1]);
     var yTitle = opt.yTitle || ('← ' + lab[0] + '  |  ' + idx + '  |  ' + lab[1] + ' →');
-    var c = new Chart(cv, { data: { datasets: datasets }, options: { responsive: true, maintainAspectRatio: false, animation: false,
+    var c = new Chart(cv, { data: { datasets: datasets }, plugins: [mmSlopeLabels], options: { responsive: true, maintainAspectRatio: false, animation: false,
       plugins: { title: { display: true, text: title, font: { size: 12 * fs } }, legend: { display: legendPos !== 'none', position: legendPos || 'bottom', labels: { boxWidth: 10 * fs, font: { size: 10 * fs }, filter: function (it) { return !/^_/.test(it.text); } } },
         tooltip: { callbacks: { label: function (c) { var d = c.raw; return (d.plat !== undefined && d.plat !== null ? platName(d.plat) + ', ' : '') + (opt.xIsYear ? c.parsed.x : fmtDate(c.parsed.x)) + ': ' + c.parsed.y.toFixed(opt.decimals === undefined ? 4 : opt.decimals); } } } },
       scales: { x: opt.xIsYear ? { type: 'linear', title: { display: true, text: opt.xTitle || 'Year', font: { size: 12 * fs } }, grid: { color: '#eee' }, ticks: { font: { size: 11 * fs }, callback: function (v) { return String(v); } } } : { type: 'time', title: { display: true, text: 'Date', font: { size: 12 * fs } }, grid: { color: '#eee' }, time: { unit: 'year' }, ticks: { font: { size: 11 * fs } } },
@@ -1080,7 +1088,14 @@ window.MM = (function () {
     ddItem(dd, ICONS.pen, 'Area of a freehand shape (click, move, double-click to finish)', function () { close(); startMeasure('freehand'); });
     ddItem(dd, ICONS.x, 'Clear measurements', function () { close(); measureLayer.clearLayers(); stopDraw(); });
   }
+  function applyOutlineVisibility() {                      // marsh unit boundaries (selection step) and the selected-area glow can be hidden from the layers menu
+    if (layers.base && layers.base.setStyle) layers.base.setStyle(S.hideUnits ? { opacity: 0, fillOpacity: 0 } : { opacity: 1, fillOpacity: layers.base._mmFill === undefined ? 0.125 : layers.base._mmFill });
+    if (layers.highlight) { if (S.hideOutline) layers.highlight.setStyle({ opacity: 0 }); else { var nm = layers.highlight._name; drawHighlightInner(null, nm); } }   // the glow has two strokes with their own opacities, so showing it again redraws it
+  }
   function basemapItems(dd, close) {
+    ddItem(dd, null, (S.hideUnits ? 'Show' : 'Hide') + ' marsh unit boundaries', function () { close(); S.hideUnits = !S.hideUnits; applyOutlineVisibility(); }, false);
+    ddItem(dd, null, (S.hideOutline ? 'Show' : 'Hide') + ' selected area outline', function () { close(); S.hideOutline = !S.hideOutline; applyOutlineVisibility(); }, false);
+    dd.appendChild(el('div', 'pv-maptool-note', 'Basemap:'));
     ddItem(dd, null, 'Esri World Imagery (default)', function () { close(); setBasemap(null); }, !basemap);
     var note = el('div', 'pv-maptool-note', 'Loading the imagery available for this area...'); dd.appendChild(note);
     imageryCatalog().then(function (cat) {

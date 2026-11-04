@@ -99,7 +99,7 @@
       info.push(el('div', 'pv-small', 'Valid observations: ' + pts.length));
       if (!pts.length) { D.panel.showError(info, MM.cubeAvailable() ? 'No time series data available.' : 'Time series will appear once the series cube is published to the server.'); return; }
       D.panel.setSeries(pts, info, res.nImages, { season: D.chartSeason || 'all', lat: latlng.lat, onSeason: function (k) { D.chartSeason = k; if (D.last) monoClick(D.last.f, D.last.latlng); } });
-      if (ui.swipe) MM.imagerySwipe(ui.swipe, { geometry: f.geometry, name: 'Ditch ' + (f.properties.id !== undefined ? f.properties.id : f.properties.did !== undefined ? f.properties.did : f.properties.fid !== undefined ? f.properties.fid : '') });
+      if (ui.swipe) MM.imagerySwipe(ui.swipe, { geometry: f.geometry, name: 'Ditch ' + (f.properties.id !== undefined ? f.properties.id : f.properties.did !== undefined ? f.properties.did : f.properties.fid !== undefined ? f.properties.fid : ''), pad: 30, minBox: 150 });   // ditches are thin: show at least 150 m of context
     }).catch(function (e) { if (req !== D.reqId) return; D.loading = false; D.panel.showError([], 'Error loading time series: ' + e.message); });
   }
 
