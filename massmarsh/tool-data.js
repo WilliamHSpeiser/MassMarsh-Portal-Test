@@ -145,6 +145,11 @@
     columnInputs();
     thin('navy'); MM.mapOpacity([{ onInput: setOpacity }], 'Layer Transparency');
     ui.status = add(el('div')); setStatus(ui.status, 'Computing trajectories...', '#888', true);
+    ui.bulk = add(el('div')); ui.bulk.style.display = 'none';
+    ui.bulk.appendChild(el('div', 'pv-p', 'Download your features with the trend as a new column (' + metricKey() + '_m, slope per year; ' + metricKey() + '_n, scenes used):'));
+    var dl = el('div', 'pv-row'); ui.bulk.appendChild(dl);
+    dl.appendChild(button('GeoJSON', function () { exportFeatures('geojson'); }, 'small')); dl.appendChild(button('Attribute table (CSV)', function () { exportFeatures('csv'); }, 'small')); dl.appendChild(button('All time series (CSV)', bulkCSV, 'small'));
+    ui.bulk.appendChild(el('div', 'pv-note', 'The GeoJSON keeps every original attribute and opens in QGIS or ArcGIS; the time-series file has one row per scene per feature.'));
   }
   function initiate() {
     header();
@@ -158,6 +163,35 @@
     add(button('← Change Satellite/Index', function () { S.step = 3; showSettings(); }));
     MM.backButton(MM.showLanding);
     computeAll();
+  }
+  // column prefix for the exported trend, e.g. Ls_mndwi_summer (Landsat MNDWI, summer scenes) or S2_ndvi_all
+  function metricKey() { return (S.opts.satellite === 'Landsat' ? 'Ls' : 'S2') + '_' + String(S.opts.index).toLowerCase() + '_' + V.season.key; }
+  function featureRecord(f) {                                 // original attributes plus the trend columns
+    var rec = {}; Object.keys(f.props || {}).forEach(function (k) { rec[k] = f.props[k]; });
+    var key = metricKey(); rec[key + '_m'] = f.slope === null || f.slope === undefined ? null : +f.slope.toFixed(8); rec[key + '_n'] = f.pts ? MM.seasonFilterKey(f.pts, V.season.key).length : 0;
+    return rec;
+  }
+  function exportFeatures(kind) {                             // 'geojson': the features (longitude / latitude) with the new columns; 'csv': the attribute table
+    var base = MM.safeName('MassMarsh_YourData_' + metricKey(), '');
+    if (kind === 'geojson') {
+      var fc = { type: 'FeatureCollection', features: V.feats.map(function (f) { return { type: 'Feature', geometry: f.geometry, properties: featureRecord(f) }; }) };
+      MM.downloadText(base + '.geojson', JSON.stringify(fc), 'application/geo+json'); return;
+    }
+    var cols = []; var seen = {}; V.feats.forEach(function (f) { Object.keys(featureRecord(f)).forEach(function (k) { if (!seen[k]) { seen[k] = 1; cols.push(k); } }); });
+    var rows = [['feature_id', 'label', 'geometry', 'centroid_lon', 'centroid_lat'].concat(cols)];
+    V.feats.forEach(function (f) { var rec = featureRecord(f); var b = MM.featureBbox({ geometry: f.geometry }); rows.push([f.id, label(f), f.type, ((b[0] + b[2]) / 2).toFixed(6), ((b[1] + b[3]) / 2).toFixed(6)].concat(cols.map(function (k) { var v = rec[k]; return v === null || v === undefined ? '' : (typeof v === 'object' ? JSON.stringify(v) : v); }))); });
+    MM.downloadText(base + '_attributes.csv', MM.csvText(rows));
+  }
+  // every feature's full series in one tidy CSV (all scenes; in_summer marks Jun-Aug; the trend is the one shown on the map, fitted under the chosen season)
+  function bulkCSV() {
+    var fmt = MM.fmtDate || function (ms) { return new Date(ms).toISOString().slice(0, 10); };
+    var rows = [['feature_id', 'label', 'feature_date', 'geometry', 'satellite', 'index', 'date', 'decimal_year', 'platform', 'value', 'in_summer', 'trend_slope_per_year', 'trend_season', 'n_images']];
+    V.feats.forEach(function (f) {
+      var slope = f.slope === null || f.slope === undefined ? '' : f.slope;
+      (f.pts || []).forEach(function (p) { var mo = new Date(p.ms).getUTCMonth() + 1; rows.push([f.id, label(f), f.date || '', f.type, S.opts.satellite, S.opts.index, fmt(p.ms), (1984 + p.years).toFixed(4), p.plat !== undefined && p.plat !== null ? MM.platName(p.plat) : '', p.value, mo >= 6 && mo <= 8 ? 1 : 0, slope, V.season.key, f.nImages || '']); });
+      if (!(f.pts && f.pts.length)) rows.push([f.id, label(f), f.date || '', f.type, S.opts.satellite, S.opts.index, '', '', '', '', '', slope, V.season.key, f.nImages || '']);
+    });
+    MM.downloadText(MM.safeName('MassMarsh_YourData_' + S.opts.satellite + '_' + S.opts.index + '_timeseries', '.csv'), MM.csvText(rows));
   }
   function seriesFor(f) { return MM.withTimeout(MM.geometrySeries(f.geometry, { sensor: S.opts.satellite, index: S.opts.index, clipPolys: selectionClip(), clipFn: inSel }), 60000); }
   function computeAll() {
@@ -176,7 +210,7 @@
       var slopes = V.feats.map(function (f) { return f.slope; }).filter(function (v) { return v !== null; });
       var m = slopes.length ? Math.max(Math.abs(MM.percentile(slopes, 0.02)), Math.abs(MM.percentile(slopes, 0.98))) : DEFAULT_RANGE; if (!isFinite(m) || m === 0) m = DEFAULT_RANGE; V.colorMin = -m; V.colorMax = m;
       V.coloured = true; drawFeatures(featureClick);
-      setStatus(ui.status, V.feats.length + ' features, ' + slopes.length + ' with a trajectory' + (slopes.length < V.feats.length ? ' (grey = too few scenes)' : ''), 'green'); ui.prompt.style.display = '';
+      setStatus(ui.status, V.feats.length + ' features, ' + slopes.length + ' with a trajectory' + (slopes.length < V.feats.length ? ' (grey = too few scenes)' : ''), 'green'); ui.prompt.style.display = ''; if (ui.bulk) ui.bulk.style.display = '';
       if (slopes.length) MM.legendBlock(ui.legend, palette(), V.colorMin, V.colorMax, idxLabels()); else ui.legend.innerHTML = '';
     });
   }
