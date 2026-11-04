@@ -1570,6 +1570,93 @@ window.MM = (function () {
     return file.text().then(kmlToGeoJSON);
   }
   function isKml(files) { return Array.prototype.slice.call(files).some(function (f) { return /\.km[lz]$/i.test(f.name); }); }
+  // ---------- shapefile writer (points, lines, polygons; one layer per geometry family inside a stored zip) ----------
+  // Written here because the available browser writers merge every polyline into one record. dbf fields: N for numbers,
+  // L for booleans, C (UTF-8, .cpg) otherwise; names are taken as given (callers keep them within 10 characters).
+  var CRC_TABLE = (function () { var t = new Uint32Array(256); for (var n = 0; n < 256; n++) { var cc = n; for (var k = 0; k < 8; k++) cc = cc & 1 ? 0xEDB88320 ^ (cc >>> 1) : cc >>> 1; t[n] = cc >>> 0; } return t; })();
+  function crc32(u8) { var cc = 0xFFFFFFFF; for (var i = 0; i < u8.length; i++) cc = CRC_TABLE[(cc ^ u8[i]) & 0xFF] ^ (cc >>> 8); return (cc ^ 0xFFFFFFFF) >>> 0; }
+  function zipStored(entries) {                              // entries: [{name, data: Uint8Array}] -> Blob (no compression)
+    var enc = new TextEncoder(), parts = [], central = [], offset = 0;
+    entries.forEach(function (e) {
+      var name = enc.encode(e.name), crc = crc32(e.data), n = e.data.length;
+      var lh = new DataView(new ArrayBuffer(30)); lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true); lh.setUint16(8, 0, true); lh.setUint16(10, 0, true); lh.setUint16(12, 0x21, true); lh.setUint32(14, crc, true); lh.setUint32(18, n, true); lh.setUint32(22, n, true); lh.setUint16(26, name.length, true); lh.setUint16(28, 0, true);
+      parts.push(new Uint8Array(lh.buffer), name, e.data);
+      var ch = new DataView(new ArrayBuffer(46)); ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true); ch.setUint16(8, 0x0800, true); ch.setUint16(10, 0, true); ch.setUint16(12, 0, true); ch.setUint16(14, 0x21, true); ch.setUint32(16, crc, true); ch.setUint32(20, n, true); ch.setUint32(24, n, true); ch.setUint16(28, name.length, true); ch.setUint16(30, 0, true); ch.setUint16(32, 0, true); ch.setUint16(34, 0, true); ch.setUint16(36, 0, true); ch.setUint32(38, 0, true); ch.setUint32(42, offset, true);
+      central.push(new Uint8Array(ch.buffer), name); offset += 30 + name.length + n;
+    });
+    var cdSize = central.reduce(function (a, u) { return a + u.length; }, 0);
+    var eo = new DataView(new ArrayBuffer(22)); eo.setUint32(0, 0x06054b50, true); eo.setUint16(4, 0, true); eo.setUint16(6, 0, true); eo.setUint16(8, entries.length, true); eo.setUint16(10, entries.length, true); eo.setUint32(12, cdSize, true); eo.setUint32(16, offset, true); eo.setUint16(20, 0, true);
+    return new Blob(parts.concat(central, [new Uint8Array(eo.buffer)]), { type: 'application/zip' });
+  }
+  function ringArea(r) { var a = 0; for (var i = 0, j = r.length - 1; i < r.length; j = i++) a += (r[j][0] - r[i][0]) * (r[j][1] + r[i][1]); return a / 2; }   // > 0 when clockwise
+  function shpRings(g) {                                     // polygon rings in shapefile order: outer clockwise, holes counter-clockwise
+    var polys = g.type === 'Polygon' ? [g.coordinates] : g.coordinates, out = [];
+    polys.forEach(function (rings) { rings.forEach(function (r, i) { var ring = r.slice(); if (ring.length && (ring[0][0] !== ring[ring.length - 1][0] || ring[0][1] !== ring[ring.length - 1][1])) ring.push(ring[0]); var cw = ringArea(ring) > 0; if ((i === 0) !== cw) ring.reverse(); out.push(ring); }); });
+    return out;
+  }
+  function shpParts(g) { return g.type === 'LineString' ? [g.coordinates] : g.type === 'MultiLineString' ? g.coordinates : shpRings(g); }
+  function shapefileLayer(features, shapeType) {             // shapeType 1 point, 3 polyline, 5 polygon -> { shp, shx }
+    var recs = [], total = 100, bbox = [Infinity, Infinity, -Infinity, -Infinity];
+    function grow(x, y) { if (x < bbox[0]) bbox[0] = x; if (y < bbox[1]) bbox[1] = y; if (x > bbox[2]) bbox[2] = x; if (y > bbox[3]) bbox[3] = y; }
+    features.forEach(function (f, idx) {
+      var g = f.geometry, body;
+      if (shapeType === 1) { body = new DataView(new ArrayBuffer(20)); body.setInt32(0, 1, true); body.setFloat64(4, g.coordinates[0], true); body.setFloat64(12, g.coordinates[1], true); grow(g.coordinates[0], g.coordinates[1]); }
+      else {
+        var parts = shpParts(g), npts = parts.reduce(function (a, pp) { return a + pp.length; }, 0), b = [Infinity, Infinity, -Infinity, -Infinity];
+        parts.forEach(function (pp) { pp.forEach(function (q) { if (q[0] < b[0]) b[0] = q[0]; if (q[1] < b[1]) b[1] = q[1]; if (q[0] > b[2]) b[2] = q[0]; if (q[1] > b[3]) b[3] = q[1]; grow(q[0], q[1]); }); });
+        body = new DataView(new ArrayBuffer(44 + 4 * parts.length + 16 * npts)); body.setInt32(0, shapeType, true); [b[0], b[1], b[2], b[3]].forEach(function (v, i) { body.setFloat64(4 + 8 * i, v, true); }); body.setInt32(36, parts.length, true); body.setInt32(40, npts, true);
+        var o = 44, start = 0; parts.forEach(function (pp) { body.setInt32(o, start, true); o += 4; start += pp.length; }); parts.forEach(function (pp) { pp.forEach(function (q) { body.setFloat64(o, q[0], true); body.setFloat64(o + 8, q[1], true); o += 16; }); });
+      }
+      var hdr = new DataView(new ArrayBuffer(8)); hdr.setInt32(0, idx + 1); hdr.setInt32(4, body.byteLength / 2); recs.push({ hdr: new Uint8Array(hdr.buffer), body: new Uint8Array(body.buffer), offset: total }); total += 8 + body.byteLength;
+    });
+    if (!features.length) bbox = [0, 0, 0, 0];
+    function header(lenBytes) { var h = new DataView(new ArrayBuffer(100)); h.setInt32(0, 9994); h.setInt32(24, lenBytes / 2); h.setInt32(28, 1000, true); h.setInt32(32, shapeType, true); [bbox[0], bbox[1], bbox[2], bbox[3], 0, 0, 0, 0].forEach(function (v, i) { h.setFloat64(36 + 8 * i, v, true); }); return new Uint8Array(h.buffer); }
+    var shp = new Uint8Array(total); shp.set(header(total), 0); recs.forEach(function (r) { shp.set(r.hdr, r.offset); shp.set(r.body, r.offset + 8); });
+    var shx = new Uint8Array(100 + 8 * recs.length); shx.set(header(shx.length), 0); recs.forEach(function (r, i) { var v = new DataView(shx.buffer, 100 + 8 * i, 8); v.setInt32(0, r.offset / 2); v.setInt32(4, r.body.length / 2); });
+    return { shp: shp, shx: shx };
+  }
+  function dbfFile(features, fieldNames) {                   // one record per feature; types from the values
+    var enc = new TextEncoder(); var fields = fieldNames.map(function (name) {
+      var vals = features.map(function (f) { return f.properties ? f.properties[name] : undefined; }).filter(function (v) { return v !== null && v !== undefined && v !== ''; });
+      var allNum = vals.length > 0 && vals.every(function (v) { return typeof v === 'number' && isFinite(v); }), allBool = vals.length > 0 && vals.every(function (v) { return typeof v === 'boolean'; });
+      if (allNum) { var ints = vals.every(function (v) { return Math.round(v) === v && Math.abs(v) < 1e15; }); return { name: name, type: 'N', width: ints ? 18 : 19, dec: ints ? 0 : 8 }; }   /* width 18 with no decimals reads back as an integer field */
+      if (allBool) return { name: name, type: 'L', width: 1, dec: 0 };
+      var w = 1; vals.forEach(function (v) { w = Math.max(w, enc.encode(typeof v === 'object' ? JSON.stringify(v) : String(v)).length); }); return { name: name, type: 'C', width: Math.min(254, w), dec: 0 };
+    });
+    var recLen = 1 + fields.reduce(function (a, f) { return a + f.width; }, 0), hdrLen = 32 + 32 * fields.length + 1, out = new Uint8Array(hdrLen + recLen * features.length + 1), v = new DataView(out.buffer), now = new Date();
+    out[0] = 3; out[1] = now.getFullYear() - 1900; out[2] = now.getMonth() + 1; out[3] = now.getDate(); v.setUint32(4, features.length, true); v.setUint16(8, hdrLen, true); v.setUint16(10, recLen, true);
+    fields.forEach(function (f, i) { var o = 32 + 32 * i, nm = enc.encode(f.name).slice(0, 10); out.set(nm, o); out[o + 11] = f.type.charCodeAt(0); out[o + 16] = f.width; out[o + 17] = f.dec; }); out[hdrLen - 1] = 0x0D;
+    features.forEach(function (f, ri) {
+      var o = hdrLen + ri * recLen; out[o] = 0x20; var pos = o + 1;
+      fields.forEach(function (fd) {
+        var val = f.properties ? f.properties[fd.name] : undefined, bytes;
+        if (val === null || val === undefined || val === '') bytes = new Uint8Array(0);
+        else if (fd.type === 'N') { var s = fd.dec ? Number(val).toFixed(fd.dec) : String(Math.round(Number(val))); bytes = enc.encode(s.slice(0, fd.width)); }
+        else if (fd.type === 'L') bytes = enc.encode(val ? 'T' : 'F');
+        else { bytes = enc.encode(typeof val === 'object' ? JSON.stringify(val) : String(val)); if (bytes.length > fd.width) bytes = bytes.slice(0, fd.width); }
+        for (var k = 0; k < fd.width; k++) out[pos + k] = 0x20;
+        if (fd.type === 'N') out.set(bytes, pos + fd.width - bytes.length); else out.set(bytes, pos);
+        pos += fd.width;
+      });
+    });
+    out[out.length - 1] = 0x1A; return out;
+  }
+  var WGS84_PRJ = 'GEOGCS["GCS_WGS_1984",DATUM["D_WGS_1984",SPHEROID["WGS_1984",6378137,298.257223563]],PRIMEM["Greenwich",0],UNIT["Degree",0.017453292519943295]]';
+  function shapefileZip(fc, base, fieldNames) {             // GeoJSON FeatureCollection (longitude / latitude) -> zip Blob with <base>_points / _lines / _polygons layers
+    var groups = { points: [], lines: [], polygons: [] };
+    (fc.features || []).forEach(function (f) {
+      var g = f.geometry; if (!g) return;
+      if (g.type === 'Point') groups.points.push(f); else if (g.type === 'MultiPoint') g.coordinates.forEach(function (cc) { groups.points.push({ type: 'Feature', geometry: { type: 'Point', coordinates: cc }, properties: f.properties }); });
+      else if (g.type === 'LineString' || g.type === 'MultiLineString') groups.lines.push(f); else if (g.type === 'Polygon' || g.type === 'MultiPolygon') groups.polygons.push(f);
+    });
+    var names = fieldNames || (function () { var out = [], seen = {}; (fc.features || []).forEach(function (f) { Object.keys(f.properties || {}).forEach(function (k) { if (!seen[k]) { seen[k] = 1; out.push(k); } }); }); return out; })();
+    var enc = new TextEncoder(), entries = [], layers = [];
+    [['points', 1], ['lines', 3], ['polygons', 5]].forEach(function (spec) {
+      var feats = groups[spec[0]]; if (!feats.length) return; var nm = base + '_' + spec[0]; var sf = shapefileLayer(feats, spec[1]); layers.push({ name: nm, count: feats.length });
+      entries.push({ name: nm + '.shp', data: sf.shp }, { name: nm + '.shx', data: sf.shx }, { name: nm + '.dbf', data: dbfFile(feats, names) }, { name: nm + '.prj', data: enc.encode(WGS84_PRJ) }, { name: nm + '.cpg', data: enc.encode('UTF-8') });
+    });
+    return { blob: zipStored(entries), layers: layers };
+  }
   function isGeoPackage(files) { return Array.prototype.slice.call(files).some(function (f) { return /\.gpkg$/i.test(f.name); }); }
   function isShapefileSet(files) { return Array.prototype.slice.call(files).some(function (f) { return /\.(zip|shp|shx|dbf|prj|cpg)$/i.test(f.name); }); }
   // o: { kind: 'geojson' | 'shapefile' | 'any', title, addLabel, max (default 25), onSites(sites) }
@@ -1709,6 +1796,6 @@ window.MM = (function () {
     cubeReady: cubeReady, cubeAvailable: cubeAvailable, cube: cube, CUBES: CUBES, pkey: pkey, platName: platName, loadBlock: loadBlock, cubeLocate: cubeLocate, cubeLocateUtm: cubeLocateUtm, pixelSeries: pixelSeries, pixelSeriesFromBlock: pixelSeriesFromBlock, meanSeries: meanSeries, pool: pool, gridMask: gridMask, cubePixelsInMask: cubePixelsInMask, selectionMask: selectionMask, bandIndex: bandIndex,
     POOL_DS: POOL_DS, POOL_PROVENANCE: POOL_PROVENANCE, poolDataset: poolDataset, poolSlopeProps: poolSlopeProps, poolSlopeOf: poolSlopeOf, poolStatsLine: poolStatsLine, poolSeriesPts: poolSeriesPts, seriesDir: seriesDir, enableSentinel2: enableSentinel2, loadServerRaster: loadServerRaster, loadSlopeRaster: loadSlopeRaster,
     compareOn: compareOn, compareOff: compareOff,
-    geometrySeries: geometrySeries, uploadDialog: uploadDialog, featureName: featureName, featureDate: featureDate, parseDate: parseDate, nameColumn: nameColumn, dateColumn: dateColumn, matchColumn: matchColumn, explodeGeometry: explodeGeometry, sitesFromGeoJSON: sitesFromGeoJSON, readShapefiles: readShapefiles, fitToGeometries: fitToGeometries, inSelectedArea: inSelectedArea, readGeoPackage: readGeoPackage, readKml: readKml, kmlToGeoJSON: kmlToGeoJSON, UPLOAD_CRS: UPLOAD_CRS
+    geometrySeries: geometrySeries, uploadDialog: uploadDialog, featureName: featureName, featureDate: featureDate, parseDate: parseDate, nameColumn: nameColumn, dateColumn: dateColumn, matchColumn: matchColumn, explodeGeometry: explodeGeometry, sitesFromGeoJSON: sitesFromGeoJSON, readShapefiles: readShapefiles, fitToGeometries: fitToGeometries, inSelectedArea: inSelectedArea, readGeoPackage: readGeoPackage, readKml: readKml, shapefileZip: shapefileZip, kmlToGeoJSON: kmlToGeoJSON, UPLOAD_CRS: UPLOAD_CRS
   };
 })();

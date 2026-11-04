@@ -148,8 +148,9 @@
     ui.bulk = add(el('div')); ui.bulk.style.display = 'none';
     ui.bulk.appendChild(el('div', 'pv-p', 'Download your features with the trend as a new column (' + metricKey() + '_m, slope per year; ' + metricKey() + '_n, scenes used):'));
     var dl = el('div', 'pv-row'); ui.bulk.appendChild(dl);
-    dl.appendChild(button('GeoJSON', function () { exportFeatures('geojson'); }, 'small')); dl.appendChild(button('Attribute table (CSV)', function () { exportFeatures('csv'); }, 'small')); dl.appendChild(button('All time series (CSV)', bulkCSV, 'small'));
-    ui.bulk.appendChild(el('div', 'pv-note', 'The GeoJSON keeps every original attribute and opens in QGIS or ArcGIS; the time-series file has one row per scene per feature.'));
+    dl.appendChild(button('GeoJSON', function () { exportFeatures('geojson'); }, 'small')); dl.appendChild(button('Shapefile', exportShapefile, 'small')); dl.appendChild(button('Attribute table (CSV)', function () { exportFeatures('csv'); }, 'small')); dl.appendChild(button('All time series (CSV)', bulkCSV, 'small'));
+    ui.bulk.appendChild(el('div', 'pv-note', 'GeoJSON and CSV keep every original attribute. Shapefile column names are limited to 10 characters, so the trend columns become ' + shortMetric('m') + ' (slope per year) and ' + shortMetric('n') + ' (scenes used), and longer attribute names are shortened the same way; points, lines and polygons go into separate layers of one zip. The time-series file has one row per scene per feature.'));
+    ui.exportNote = el('div', 'pv-note'); ui.bulk.appendChild(ui.exportNote);
   }
   function initiate() {
     header();
@@ -170,6 +171,27 @@
     var rec = {}; Object.keys(f.props || {}).forEach(function (k) { rec[k] = f.props[k]; });
     var key = metricKey(); rec[key + '_m'] = f.slope === null || f.slope === undefined ? null : +f.slope.toFixed(8); rec[key + '_n'] = f.pts ? MM.seasonFilterKey(f.pts, V.season.key).length : 0;
     return rec;
+  }
+  // shapefile (dbf) field names: at most 10 characters. Trend columns: <Ls|S2><index>_<s|a><m|n>, e.g. Lsmndwi_sm = Landsat MNDWI summer slope
+  function shortMetric(suffix) { return ((S.opts.satellite === 'Landsat' ? 'Ls' : 'S2') + String(S.opts.index).toLowerCase()).slice(0, 7) + '_' + V.season.key.charAt(0) + suffix; }
+  function shortNames(keys) {                                 // unique 10-character names for the original attributes
+    var out = {}, used = {}; var key = metricKey();
+    keys.forEach(function (k) {
+      var nm = k === key + '_m' ? shortMetric('m') : k === key + '_n' ? shortMetric('n') : String(k).replace(/[^A-Za-z0-9_]/g, '_').slice(0, 10);
+      var base = nm, i = 2; while (used[nm.toLowerCase()]) { var suf = '_' + i++; nm = base.slice(0, 10 - suf.length) + suf; }
+      used[nm.toLowerCase()] = 1; out[k] = nm;
+    });
+    return out;
+  }
+  function exportShapefile() {                                // zipped shapefile set (one layer per geometry type) written in the browser
+    var base = MM.safeName('MassMarsh_YourData_' + metricKey(), '');
+    var keys = []; var seen = {}; V.feats.forEach(function (f) { Object.keys(featureRecord(f)).forEach(function (k) { if (!seen[k]) { seen[k] = 1; keys.push(k); } }); }); var names = shortNames(keys);
+    var fc = { type: 'FeatureCollection', features: V.feats.map(function (f) { var rec = featureRecord(f), props = {}; keys.forEach(function (k) { var v = rec[k]; props[names[k]] = v === undefined || v === null ? null : (typeof v === 'object' ? JSON.stringify(v) : v); }); return { type: 'Feature', geometry: f.geometry, properties: props }; }) };
+    try {
+      var z = MM.shapefileZip(fc, base, keys.map(function (k) { return names[k]; }));
+      var a = document.createElement('a'); a.href = URL.createObjectURL(z.blob); a.download = base + '_shapefile.zip'; a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); }, 2000);
+      if (ui.exportNote) { ui.exportNote.textContent = 'Shapefile written: ' + z.layers.map(function (l) { return l.count + ' in ' + l.name.replace(base + '_', ''); }).join(', ') + '.'; ui.exportNote.style.color = '#555'; }
+    } catch (e) { if (ui.exportNote) { ui.exportNote.textContent = 'Shapefile export failed: ' + (e && e.message || e) + '. The GeoJSON holds the same data.'; ui.exportNote.style.color = '#c00'; } }
   }
   function exportFeatures(kind) {                             // 'geojson': the features (longitude / latitude) with the new columns; 'csv': the attribute table
     var base = MM.safeName('MassMarsh_YourData_' + metricKey(), '');
