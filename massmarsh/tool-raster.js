@@ -108,7 +108,7 @@
     var rectBtn = button('Rectangle', function () { if (MM.isDrawing()) { MM.stopDraw(); ui.drawInfo.textContent = ''; return; } MM.armDraw('rectangle', rectBtn, function (b) { ui.drawInfo.textContent = ''; onRegion([[[b.getWest(), b.getSouth()], [b.getEast(), b.getSouth()], [b.getEast(), b.getNorth()], [b.getWest(), b.getNorth()], [b.getWest(), b.getSouth()]]]); }, { color: 'blue' }); ui.drawInfo.textContent = 'Draw a rectangle on the map. Double-click to finish.'; }, 'small');
     var polyBtn = button('Polygon', function () { if (MM.isDrawing()) { MM.stopDraw(); ui.drawInfo.textContent = ''; return; } MM.armDraw('polygon', polyBtn, function (v) { ui.drawInfo.textContent = ''; onRegion([v.concat([v[0]])]); }, { color: 'blue' }); ui.drawInfo.textContent = 'Draw a polygon on the map. Double-click to finish.'; }, 'small');
     dr.appendChild(rectBtn); dr.appendChild(polyBtn);
-    dr.appendChild(button('Clear', function () { MM.stopDraw(); MM.removeToolLayer('region'); MM.removeToolLayer('marker'); ui.drawInfo.textContent = ''; if (R.panel) R.panel.clear(); R.reqId++; R.loading = false; }, 'small'));
+    dr.appendChild(button('Clear', function () { MM.stopDraw(); MM.removeToolLayer('region'); MM.removeToolLayer('marker'); ui.drawInfo.textContent = ''; if (R.panel) R.panel.clear(); else { if (ui.info) ui.info.innerHTML = ''; if (ui.chart) ui.chart.innerHTML = ''; } R.reqId++; R.loading = false; }, 'small'));   // creator mode keeps its message in ui.info / ui.chart
     ui.drawInfo = add(el('div', 'pv-small'));
   }
   function loadInspectorRaster() {
@@ -159,14 +159,16 @@
     var bb = MM.bboxOf([rings]); var vals = [];
     var c0 = Math.max(0, Math.floor((bb[0] - g.xmin) / g.pixelWidth)), c1 = Math.min(g.width - 1, Math.floor((bb[2] - g.xmin) / g.pixelWidth));
     var r0 = Math.max(0, Math.floor((g.ymax - bb[3]) / g.pixelHeight)), r1 = Math.min(g.height - 1, Math.floor((g.ymax - bb[1]) / g.pixelHeight));
-    for (var r = r0; r <= r1; r++) for (var c = c0; c <= c1; c++) { var lon = g.xmin + (c + 0.5) * g.pixelWidth, lat = g.ymax - (r + 0.5) * g.pixelHeight; if (!MM.pointInPolys(lon, lat, [rings]) || !MM.inSelection(lon, lat)) continue; var v = rasterValue(g, 0, r, c); if (v !== null) vals.push(v); }
+    function collect(strict) { var out = []; for (var r = r0; r <= r1; r++) for (var c = c0; c <= c1; c++) { var lon = g.xmin + (c + 0.5) * g.pixelWidth, lat = g.ymax - (r + 0.5) * g.pixelHeight; if ((strict && !MM.pointInPolys(lon, lat, [rings])) || !MM.inSelection(lon, lat)) continue; var v = rasterValue(g, 0, r, c); if (v !== null) out.push(v); } return out; }
+    vals = collect(true); if (!vals.length) vals = collect(false);   // a shape smaller than a pixel holds no pixel centre: use the cells its bounding box touches
     var info = [el('div', 'pv-h lg', 'Region Information')];
-    if (!vals.length) { R.loading = false; R.panel.showError(info, 'No data in this region.'); return; }
-    var mean = vals.reduce(function (a, v) { return a + v; }, 0) / vals.length; var sd = Math.sqrt(vals.reduce(function (a, v) { return a + (v - mean) * (v - mean); }, 0) / vals.length);
-    info.push(el('div', 'pv-h lg', 'Mean ' + S.opts.index + ' Slope: ' + mean.toFixed(6) + ' /year')); info.push(el('div', 'pv-small', 'Std Dev: ' + sd.toFixed(6) + ' /year')); info.push(el('div', 'pv-small', vals.length + ' pixels'));
+    if (vals.length) {                                         // slope raster statistics when the raster has values here; the time series below comes from the cube either way
+      var mean = vals.reduce(function (a, v) { return a + v; }, 0) / vals.length; var sd = Math.sqrt(vals.reduce(function (a, v) { return a + (v - mean) * (v - mean); }, 0) / vals.length);
+      info.push(el('div', 'pv-h lg', 'Mean ' + S.opts.index + ' Slope: ' + mean.toFixed(6) + ' /year')); info.push(el('div', 'pv-small', 'Std Dev: ' + sd.toFixed(6) + ' /year')); info.push(el('div', 'pv-small', vals.length + ' pixels'));
+    } else info.push(el('div', 'pv-small', 'The slope raster has no value in this region (too few scenes for a trend); the time series of the marsh pixels it touches is shown below.'));
     MM.cubeReady().then(function () {
       var px = regionPixels(rings); var keys = Object.keys(px.byBlock);
-      if (!keys.length) { R.loading = false; R.panel.showError(info, 'No time series data available.'); return; }
+      if (!keys.length) { R.loading = false; R.panel.showError([el('div', 'pv-h lg', 'Region Information')], vals.length ? 'No time series data available.' : 'No data in this region: it does not touch any marsh pixel inside the selected area.'); return; }
       if (keys.length > MAX_REGION_BLOCKS) { R.loading = false; info.push(el('div', 'pv-warn', 'Region too large for the averaged series (' + keys.length + ' blocks, max ' + MAX_REGION_BLOCKS + '); showing statistics only.')); R.panel.setSeries([], info, 0); return; }
       return MM.meanSeries(px.byBlock, S.opts.index).then(function (res) { if (req !== R.reqId) return; R.loading = false; R.panel.setSeries(MM.seasonFilterKey(res.pts, R.chartSeason), info, res.nImages, seasonExtra((bb[1] + bb[3]) / 2)); if (ui.swipe) MM.imagerySwipe(ui.swipe, { geometry: { type: 'Polygon', coordinates: rings }, name: 'Region' }); });
     }).catch(function (e) { if (req !== R.reqId) return; R.loading = false; R.panel.showError(info, 'Error loading time series: ' + e.message); });

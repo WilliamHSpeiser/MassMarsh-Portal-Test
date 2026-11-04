@@ -1192,7 +1192,12 @@ window.MM = (function () {
     function paint(polySet) {
       ctx.clearRect(0, 0, W, H); ctx.fillStyle = '#000';
       polySet.forEach(function (rings) { ctx.beginPath(); rings.forEach(function (ring) { ring.forEach(function (c, i) { var u = toUtm(c[0], c[1]); var x = (u[0] - E0) / res, y = (N1 - u[1]) / res; if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); }); ctx.closePath(); }); ctx.fill('evenodd'); });
-      var img = ctx.getImageData(0, 0, W, H).data; var m = new Uint8Array(W * H); for (var i = 0; i < W * H; i++) m[i] = img[i * 4 + 3] > 127 ? 1 : 0; return m;
+      var img = ctx.getImageData(0, 0, W, H).data; var m = new Uint8Array(W * H), any = 0; for (var i = 0; i < W * H; i++) { m[i] = img[i * 4 + 3] > 127 ? 1 : 0; any += m[i]; }
+      if (!any) {                                            // a shape smaller than a pixel holds no pixel centre: mark the cells its outline passes through
+        function mark(E, N) { var x = Math.floor((E - E0) / res), y = Math.floor((N1 - N) / res); if (x >= 0 && y >= 0 && x < W && y < H) m[y * W + x] = 1; }
+        polySet.forEach(function (rings) { rings.forEach(function (ring) { var u = ring.map(function (c) { return toUtm(c[0], c[1]); }); for (var i = 0; i < u.length; i++) { var a = u[i], b = u[(i + 1) % u.length]; var n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / (res / 4))); for (var k = 0; k <= n; k++) mark(a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n); } }); });
+      }
+      return m;
     }
     var mask = paint(polys);
     if (clip) { var cm = paint(clip); for (var i = 0; i < mask.length; i++) mask[i] = mask[i] && cm[i] ? 1 : 0; }
