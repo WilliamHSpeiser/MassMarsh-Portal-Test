@@ -1093,8 +1093,7 @@ window.MM = (function () {
     if (layers.highlight) { if (S.hideOutline) layers.highlight.setStyle({ opacity: 0 }); else { var nm = layers.highlight._name; drawHighlightInner(null, nm); } }   // the glow has two strokes with their own opacities, so showing it again redraws it
   }
   function basemapItems(dd, close) {
-    ddItem(dd, null, (S.hideUnits ? 'Show' : 'Hide') + ' marsh unit boundaries', function () { close(); S.hideUnits = !S.hideUnits; applyOutlineVisibility(); }, false);
-    ddItem(dd, null, (S.hideOutline ? 'Show' : 'Hide') + ' selected area outline', function () { close(); S.hideOutline = !S.hideOutline; applyOutlineVisibility(); }, false);
+    ddItem(dd, null, (S.hideUnits ? 'Show' : 'Hide') + ' marsh outlines (unit boundaries and selected area)', function () { close(); S.hideUnits = S.hideOutline = !S.hideUnits; applyOutlineVisibility(); }, false);   // one switch for both cyan outlines
     dd.appendChild(el('div', 'pv-maptool-note', 'Basemap:'));
     ddItem(dd, null, 'Esri World Imagery (default)', function () { close(); setBasemap(null); }, !basemap);
     var note = el('div', 'pv-maptool-note', 'Loading the imagery available for this area...'); dd.appendChild(note);
