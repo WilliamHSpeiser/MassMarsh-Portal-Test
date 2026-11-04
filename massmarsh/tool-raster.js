@@ -292,7 +292,7 @@
     add(el('div', 'pv-h', 'Draw Region for Average Time Series:'));
     regionTools(function (rings) { creatorRegion(rings); });
     thin();
-    ui.info = add(el('div')); ui.chart = add(el('div')); add(el('div', 'pv-note', '(Right-click chart to save as image)'));
+    ui.info = add(el('div')); ui.chart = add(el('div')); add(el('div', 'pv-note pv-save-hint', '(Click icon next to chart title to save as image or csv)'));
     ui.legend = add(el('div')); swatchLegend(ui.legend, activePalette(), C.vis[0], C.vis[1]);
     thin();
     add(el('div', 'pv-h', 'Download Raster:'));

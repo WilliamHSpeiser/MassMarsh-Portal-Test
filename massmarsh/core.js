@@ -737,7 +737,7 @@ window.MM = (function () {
     P.trendBtns = el('div', 'pv-row'); P.addTrend = button('Add Second Trend', addBreakpoint); P.addTrend.disabled = true; P.clearTrend = button('Clear All', clearBreakpoints); P.clearTrend.disabled = true; P.trendBtns.appendChild(P.addTrend); P.trendBtns.appendChild(P.clearTrend); P.custom.appendChild(P.trendBtns);
     P.custom.appendChild(el('div', 'pv-thin')); P.custom.appendChild(el('div', 'pv-h', 'Change Point Detection:'));
     P.calc = button('Calculate', detectChangePoint); P.calc.disabled = true; P.custom.appendChild(P.calc); P.cpInfo = el('div'); P.custom.appendChild(P.cpInfo);
-    P.custom.appendChild(el('div', 'pv-note', '(Right-click chart to save as image)'));
+    P.custom.appendChild(el('div', 'pv-note pv-save-hint', '(Click icon next to chart title to save as image or csv)'));
     function resetButtons() { P.addTrend.disabled = true; P.addTrend.textContent = 'Add Second Trend'; P.clearTrend.disabled = true; P.trendBtns.style.display = ''; P.calc.disabled = true; P.breakpoints = []; }
     P.setLoading = function (label) { P.custom.style.display = 'none'; P.info.innerHTML = ''; P.chart.innerHTML = ''; P.trendInfo.innerHTML = ''; P.cpInfo.innerHTML = ''; resetButtons(); P.pts = null;
       if (label) { var ld = el('div', '', label); ld.style.cssText = 'color:#c00;font-size:13px;font-weight:bold'; P.info.appendChild(ld); } };

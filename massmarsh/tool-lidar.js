@@ -190,7 +190,7 @@
     var ds = withData.map(function (s) { var lab = (nL > 1 && nT > 1) ? s.transect.label + ' - ' + s.label : nL > 1 ? s.label : nT > 1 ? s.transect.label : s.label;
       return { type: 'line', label: lab, data: s.transect.samples.map(function (p, i) { return { x: Math.round(p.dist * 10) / 10, y: s.values[i] }; }), borderColor: s.transect.color, backgroundColor: s.transect.color, borderWidth: 2, pointRadius: 0, spanGaps: false, tension: 0 }; });
     MM.drawChart(ui.chart, Lz.zstar ? 'Z* Profile' : 'Elevation Profile', ds, 280, withData.length > 1 ? 'right' : 'none', { xIsYear: true, xTitle: 'Distance (m)', yRange: null, yTitle: Lz.zstar ? 'Z*' : 'Elevation (m)', decimals: 2 });
-    ui.chart.appendChild(el('div', 'pv-note', '(Right-click chart to save as image)'));
+    ui.chart.appendChild(el('div', 'pv-note pv-save-hint', '(Click icon next to chart title to save as image or csv)'));
     ui.addMore.style.display = '';
   }
   function clearTransects() { MM.stopDraw(); Object.keys(MM.layers.tool).forEach(function (k) { if (k.indexOf('transect:') === 0) MM.removeToolLayer(k); }); Lz.transects = []; ui.tinfo.innerHTML = ''; ui.chart.innerHTML = ''; ui.addMore.style.display = 'none'; }

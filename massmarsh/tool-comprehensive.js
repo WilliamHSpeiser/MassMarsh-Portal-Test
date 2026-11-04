@@ -97,7 +97,7 @@
     add(el('div', 'pv-h', 'Export Options:'));
     var ex = add(el('div', 'pv-row')); ui.csv = button('Export CSV', exportCSV); ui.csv.disabled = true; ex.appendChild(ui.csv); ex.appendChild(button('Download Raster', downloadRaster));
     ui.exportInfo = add(el('div'));
-    add(el('div', 'pv-note', '(Right-click chart to save as image)'));
+    add(el('div', 'pv-note pv-save-hint', '(Click icon next to chart title to save as image or csv)'));
     ui.legend = add(el('div')); ui.legend.style.margin = '10px 0'; MM.legendBlock(ui.legend, MM.PALETTES[S.opts.index], C.stretch[0], C.stretch[1], labels(), 'Legend (slope/year)');
     MM.citation(MM.CITATIONS.ditches);
     var ch = add(button('← Change Satellite/Index', function () { clearTool(); S.step = 2; showSatelliteStep(); })); ch.style.margin = '5px 0';

@@ -112,7 +112,7 @@
     ui.prompt = add(el('div')); ui.prompt.style.display = 'none'; ui.prompt.appendChild(el('div', 'pv-prompt', 'Click on pools to add them to the comparison')); ui.prompt.appendChild(el('div', 'pv-small', 'Each pool will be assigned a unique color'));
     thin(); add(el('div', 'pv-h', 'Selected Pools:')); ui.list = add(el('div'));
     add(button('Clear All Pools', function () { P.multi.forEach(function (m) { MM.removeToolLayer(m.key); }); P.multi = []; P.multiNext = 1; renderList(); renderChart(); }));
-    thin(); add(el('div', 'pv-h lg', 'Time Series Comparison:')); ui.chart = add(el('div')); add(el('div', 'pv-note', '(Right-click chart to save as image)'));
+    thin(); add(el('div', 'pv-h lg', 'Time Series Comparison:')); ui.chart = add(el('div')); add(el('div', 'pv-note pv-save-hint', '(Click icon next to chart title to save as image or csv)'));
     thin(); add(el('div', 'pv-h', 'Date Range Filter (optional):'));
     var r = add(el('div', 'pv-row')); r.appendChild(el('span', 'pv-note', 'From:')); ui.from = el('input'); ui.from.type = 'text'; ui.from.placeholder = 'YYYY-MM-DD'; ui.from.style.width = '85px'; r.appendChild(ui.from);
     r.appendChild(el('span', 'pv-note', 'To:')); ui.to = el('input'); ui.to.type = 'text'; ui.to.placeholder = 'YYYY-MM-DD'; ui.to.style.width = '85px'; r.appendChild(ui.to);
