@@ -132,6 +132,14 @@
     if (container._chart) container._chart.destroy();
     container._chart = new Chart(cv, { type: 'bar', data: { datasets: ds }, options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { display: true, position: 'top', align: 'end', labels: { boxWidth: 10, font: { size: 10 } } }, title: { display: true, text: title, font: { size: 11 } }, subtitle: { display: true, text: histNote(b), font: { size: 9, style: 'italic' }, color: '#666', position: 'bottom' } },
       scales: { x: { type: 'linear', min: b.lo, max: b.hi, stacked: true, title: { display: true, text: xLabel }, ticks: { font: { size: 9 }, callback: function (v) { return fmtTick(v); } }, afterBuildTicks: function (axis) { axis.ticks = b.ticks.map(function (t) { return { value: t }; }); }, offset: false }, y: { stacked: true, beginAtZero: true, title: { display: true, text: yLabel || 'Count' } } }, datasets: { bar: { barPercentage: 0.9, categoryPercentage: 1 } } } });
+    var links = el('div', 'pv-chart-links');                     // the histogram's bins as CSV, the chart as PNG
+    links.appendChild(button('Download CSV', function () {
+      var rows = [['bin_low', 'bin_high', 'bin_centre', 'count_negative_slope', 'count_positive_slope', 'total_count']];
+      b.centres.forEach(function (cc, i) { rows.push([+(b.lo + i * b.width).toFixed(6), +(b.lo + (i + 1) * b.width).toFixed(6), +cc.toFixed(6), b.neg[i], b.pos[i], b.neg[i] + b.pos[i]]); });
+      MM.downloadText(MM.safeName(title, '.csv'), MM.csvText(rows));
+    }, 'small'));
+    links.appendChild(button('Download PNG', function () { MM.downloadChartPNG(wrap, null, title); }, 'small'));
+    container.appendChild(links);
   }
 
   // ======================================================================
@@ -493,7 +501,12 @@
       var txt = r.hasDate && r.restorationYear !== undefined
         ? 'Before restoration: ' + fmtSlope(r.preSlope) + ' (' + r.preCount + ' scenes) \u00b7 after: ' + fmtSlope(r.postSlope) + ' (' + r.postCount + ' scenes)'
         : 'Trend: ' + fmtSlope(r.overallSlope) + ' over ' + r.overallCount + ' scenes';
-      box.lastChild.outerHTML = restorationChartSVG(r, 350, 190) + '<div style="margin-top:4px;color:#444">' + txt + '</div>';
+      box.lastChild.outerHTML = restorationChartSVG(r, 350, 190) + '<div style="margin-top:4px;color:#444">' + txt + '</div><div class="pv-chart-links"><button type="button" class="small pv-site-csv">Download CSV</button></div>';
+      var csvBtn = box.querySelector('.pv-site-csv'); if (csvBtn) csvBtn.addEventListener('click', function () {
+        var rows = [['site', 'date', 'decimal_year', 'value', 'period', 'trend_slope_per_year']];
+        r.timeSeries.forEach(function (pt) { var per = r.hasDate && r.restorationYear !== undefined ? (pt.x < r.restorationYear ? 'before' : 'after') : 'all'; var sl = per === 'before' ? r.preSlope : per === 'after' ? r.postSlope : r.overallSlope; rows.push([site.name || ('Site ' + site.id), MM.fmtDate ? MM.fmtDate(pt.ms) : new Date(pt.ms).toISOString().slice(0, 10), (1984 + pt.x).toFixed(4), pt.y, per, sl === null || sl === undefined ? '' : sl]); });
+        MM.downloadText(MM.safeName((site.name || 'site_' + site.id) + '_' + S.opts.satellite + '_' + S.opts.index, '.csv'), MM.csvText(rows));
+      });
       pop.update();
     }).catch(function (e) { box.lastChild.textContent = 'Time series failed: ' + e.message; box.lastChild.style.color = '#c00'; });
   }

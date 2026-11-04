@@ -664,7 +664,7 @@ window.MM = (function () {
     var x = el('button', 'pv-chart-modal-x'); x.type = 'button'; x.title = 'Close'; x.innerHTML = ICONS.x; box.appendChild(x);
     var holder = el('div', 'pv-chart-modal-chart'); box.appendChild(holder);
     var cap = container.querySelector('.pv-caption'); var capNode = cap ? el('div', cap.className, cap.textContent) : null;
-    var foot = el('div', 'pv-chart-modal-foot'); foot.appendChild(button('Download', function () { downloadChart(holder, capNode, a.title); })); box.appendChild(foot);
+    var foot = el('div', 'pv-chart-modal-foot'); foot.appendChild(button('Download PNG', function () { downloadChart(holder, capNode, a.title); })); foot.appendChild(button('Download CSV', function () { downloadChartCSV(container); })); box.appendChild(foot);
     document.body.appendChild(ov);
     var h = Math.max(160, box.clientHeight - foot.offsetHeight - (capNode ? 26 : 0) - 56);   // chart fills the box above the Download row
     var ds = a.datasets.map(function (d) { var c = Object.assign({}, d, { data: d.data.slice() }); if (c.pointRadius) c.pointRadius = c.pointRadius * 1.5; if (c.borderWidth) c.borderWidth = c.borderWidth * 1.5; return c; });
@@ -675,12 +675,32 @@ window.MM = (function () {
     var modal = { close: close }; chartModal = modal;
     x.addEventListener('click', close); ov.addEventListener('click', function (e) { if (e.target === ov) close(); }); document.addEventListener('keydown', onKey);
   }
+  // CSV of a drawn chart: one row per plotted point; trend lines carry their fit (slope per year, intercept for x = years since 1984-01-01, r2, n)
+  function csvEscape(v) { v = v === null || v === undefined ? '' : String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }
+  function csvText(rows) { return rows.map(function (r) { return r.map(csvEscape).join(','); }).join('\n') + '\n'; }
+  function safeName(title, ext) { return String(title || 'chart').replace(/[^\w\-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 80) + ext; }
+  function downloadText(name, text, mime) { var blob = new Blob([text], { type: mime || 'text/csv;charset=utf-8' }); var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); }, 2000); }
+  function chartCSV(a) {
+    var xIsYear = !!(a.opt && a.opt.xIsYear), xName = xIsYear ? (a.opt.xTitle || 'x') : 'date';
+    var head = ['series', 'kind', xName].concat(xIsYear ? [] : ['decimal_year']).concat(['platform', 'value', 'trend_slope_per_year', 'trend_intercept', 'trend_r2', 'trend_n']); var rows = [head];
+    a.datasets.forEach(function (d) {
+      var kind = d.type === 'line' ? (d._fit ? 'trend' : 'line') : 'observation'; var f = d._fit || {}; var hasFit = kind === 'trend' && f.slope !== null && f.slope !== undefined;
+      (d.data || []).forEach(function (pt) {
+        var row = [String(d.label || '').replace(/^_/, ''), kind, xIsYear ? pt.x : fmtDate(pt.x)];
+        if (!xIsYear) row.push((START_YEAR + (pt.x - EPOCH_MS) / YEAR_MS).toFixed(4));
+        row.push(pt.plat !== undefined && pt.plat !== null ? platName(pt.plat) : '', pt.y === null || pt.y === undefined ? '' : pt.y, hasFit ? f.slope : '', hasFit ? f.intercept : '', hasFit ? f.r2 : '', hasFit ? f.n : '');
+        rows.push(row);
+      });
+    });
+    return csvText(rows);
+  }
+  function downloadChartCSV(container) { var a = container._chartArgs; if (!a) return; downloadText(safeName(a.title, '.csv'), chartCSV(a)); }
   function downloadChart(holder, capNode, title) {                // PNG of the expanded chart on white, caption underneath
     var cv = holder.querySelector('canvas'); if (!cv) return; var k = cv.width / (cv.clientWidth || cv.width); var pad = Math.round(16 * k), capH = capNode ? Math.round(26 * k) : 0;
     var out = document.createElement('canvas'); out.width = cv.width + 2 * pad; out.height = cv.height + 2 * pad + capH; var c = out.getContext('2d');
     c.fillStyle = '#fff'; c.fillRect(0, 0, out.width, out.height); c.drawImage(cv, pad, pad);
     if (capNode) { c.fillStyle = /red/.test(capNode.className) ? '#c00' : '#555'; c.font = Math.round(12 * k) + 'px Roboto, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'bottom'; c.fillText(capNode.textContent, out.width / 2, out.height - pad / 2); }
-    var a = document.createElement('a'); a.href = out.toDataURL('image/png'); a.download = String(title || 'chart').replace(/[^\w\-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 80) + '.png'; a.click();
+    var a = document.createElement('a'); a.href = out.toDataURL('image/png'); a.download = safeName(title, '.png'); a.click();
   }
 
   // ---------- series panel: info + chart + breakpoints + change point (shared by the mono analyses) ----------
@@ -1676,7 +1696,7 @@ window.MM = (function () {
     removeLayer: removeLayer, addToolLayer: addToolLayer, removeToolLayer: removeToolLayer, clearToolLayers: clearToolLayers, clearAllLayers: clearAllLayers,
     armDraw: armDraw, stopDraw: stopDraw, isDrawing: isDrawing, setClickHandler: setClickHandler, addSwitcher: addSwitcher, removeSwitcher: removeSwitcher,
     linearFit: linearFit, xy: xy, fitSeries: fitSeries, percentile: percentile, nearestRank: nearestRank, rampColor: rampColor, hexToRgb: hexToRgb, seasonFilter: seasonFilter, seasonFilterKey: seasonFilterKey, glowLayer: glowLayer, ICONS: ICONS, limitIndexes: limitIndexes, imagerySwipe: imagerySwipe, stopSwipes: stopSwipes, tideStationFor: tideStationFor, tideTable: tideTable, TIDE_STATIONS: TIDE_STATIONS, dayPts: dayPts,
-    trendDataset: trendDataset, scatterDs: scatterDs, drawChart: drawChart, caption: caption, seriesPanel: seriesPanel, legendBlock: legendBlock, mapLegend: mapLegend, mapOpacity: mapOpacity, imageryCatalog: imageryCatalog, setBasemap: setBasemap, startMeasure: startMeasure, busy: busy, listservDialog: listservDialog,
+    trendDataset: trendDataset, scatterDs: scatterDs, drawChart: drawChart, downloadChartCSV: downloadChartCSV, downloadChartPNG: downloadChart, chartCSV: chartCSV, csvText: csvText, downloadText: downloadText, safeName: safeName, caption: caption, seriesPanel: seriesPanel, legendBlock: legendBlock, mapLegend: mapLegend, mapOpacity: mapOpacity, imageryCatalog: imageryCatalog, setBasemap: setBasemap, startMeasure: startMeasure, busy: busy, listservDialog: listservDialog,
     cubeReady: cubeReady, cubeAvailable: cubeAvailable, cube: cube, CUBES: CUBES, pkey: pkey, platName: platName, loadBlock: loadBlock, cubeLocate: cubeLocate, cubeLocateUtm: cubeLocateUtm, pixelSeries: pixelSeries, pixelSeriesFromBlock: pixelSeriesFromBlock, meanSeries: meanSeries, pool: pool, gridMask: gridMask, cubePixelsInMask: cubePixelsInMask, selectionMask: selectionMask, bandIndex: bandIndex,
     POOL_DS: POOL_DS, POOL_PROVENANCE: POOL_PROVENANCE, poolDataset: poolDataset, poolSlopeProps: poolSlopeProps, poolSlopeOf: poolSlopeOf, poolStatsLine: poolStatsLine, poolSeriesPts: poolSeriesPts, seriesDir: seriesDir, enableSentinel2: enableSentinel2, loadServerRaster: loadServerRaster, loadSlopeRaster: loadSlopeRaster,
     compareOn: compareOn, compareOff: compareOff,
