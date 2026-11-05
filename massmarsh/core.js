@@ -654,13 +654,13 @@ window.MM = (function () {
     container._chartArgs = { title: title, datasets: datasets, legendPos: legendPos, opt: opt };   // re-drawn larger by expandChart (same data, trends, change point)
     if (!opt.noExpand) { var ex = el('button', 'pv-chart-expand'); ex.type = 'button'; ex.title = 'Expand chart'; ex.innerHTML = ICONS.expand; ex.addEventListener('click', function () { expandChart(container); }); wrap.appendChild(ex); }
     var fs = opt.fontScale || 1;
-    var idx = opt.index || S.opts.index; var lab = LABELS[idx] || ['', '']; var yr = opt.yRange || (idx === 'VV' || idx === 'VH' ? [-30, 0] : [-1, 1]);
+    var idx = opt.index || S.opts.index; var lab = LABELS[idx] || ['', '']; var yr = opt.yRange === null ? null : (opt.yRange || (idx === 'VV' || idx === 'VH' ? [-30, 0] : [-1, 1]));   // yRange null: the axis follows the data (transect profiles)
     var yTitle = opt.yTitle || ('← ' + lab[0] + '  |  ' + idx + '  |  ' + lab[1] + ' →');
     var c = new Chart(cv, { data: { datasets: datasets }, plugins: [mmSlopeLabels], options: { responsive: true, maintainAspectRatio: false, animation: false,
       plugins: { title: { display: true, text: title, font: { size: 12 * fs } }, legend: { display: legendPos !== 'none', position: legendPos || 'bottom', labels: { boxWidth: 10 * fs, font: { size: 10 * fs }, filter: function (it) { return !/^_/.test(it.text); } } },
         tooltip: { callbacks: { label: function (c) { var d = c.raw; return (d.plat !== undefined && d.plat !== null ? platName(d.plat) + ', ' : '') + (opt.xIsYear ? c.parsed.x : fmtDate(c.parsed.x)) + ': ' + c.parsed.y.toFixed(opt.decimals === undefined ? 4 : opt.decimals); } } } },
       scales: { x: opt.xIsYear ? { type: 'linear', title: { display: true, text: opt.xTitle || 'Year', font: { size: 12 * fs } }, grid: { color: '#eee' }, ticks: { font: { size: 11 * fs }, callback: function (v) { return String(v); } } } : { type: 'time', title: { display: true, text: 'Date', font: { size: 12 * fs } }, grid: { color: '#eee' }, time: { unit: 'year' }, ticks: { font: { size: 11 * fs } } },
-        y: { min: yr ? yr[0] : undefined, max: yr ? yr[1] : undefined, title: { display: true, text: yTitle, font: { size: 12 * fs } }, grid: { color: '#eee' }, ticks: { font: { size: 11 * fs } } } } } });
+        y: { min: yr ? yr[0] : undefined, max: yr ? yr[1] : undefined, grace: yr ? undefined : '5%', title: { display: true, text: yTitle, font: { size: 12 * fs } }, grid: { color: '#eee' }, ticks: { font: { size: 11 * fs } } } } } });
     container._chart = c; return c;
   }
   function caption(container, text, red) { container.appendChild(el('div', 'pv-caption' + (red ? ' red' : ''), text)); }
