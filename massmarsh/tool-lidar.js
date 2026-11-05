@@ -34,7 +34,7 @@
   // ---------- COG access (georaster lazily reads windows from the COG through HTTP range requests) ----------
   function openRaster(file) {
     if (Lz.rasters[file]) return Lz.rasters[file];
-    var p = parseGeoraster(rasterUrl(file)).then(function (g) { g._file = file; return g; }).catch(function (e) { delete Lz.rasters[file]; throw e; });
+    var p = MM.openCog(rasterUrl(file)).then(function (g) { g._file = file; return g; }).catch(function (e) { delete Lz.rasters[file]; throw e; });
     Lz.rasters[file] = p; return p;
   }
   function toMerc(lon, lat) { return proj4('EPSG:4326', 'EPSG:3857', [lon, lat]); }
@@ -100,7 +100,7 @@
     var sel = S.selection; Lz.avail = {};
     tidal().then(function (t) { Lz.mn = t.mn; Lz.msl = t.msl; });
     Promise.all(DATASETS.map(function (d) {
-      return Promise.all(d.files.map(function (f) { return openRaster(f).then(function (g) { var win = windowOf(g, sel.bbox); if (!win) return null; return readWindow(g, win, 400).then(function (w) { return w ? { g: g, win: w } : null; }); }).catch(function () { return null; }); })).then(function (parts) {
+      return Promise.all(d.files.map(function (f) { return openRaster(f).then(function (g) { var win = windowOf(g, sel.bbox); if (!win) return null; return readWindow(g, win, 400).then(function (w) { return w ? { g: g, win: w } : null; }); }).catch(function (e) { console.warn('LiDAR ' + f + ': ' + (e && e.message ? e.message : e)); return null; }); })).then(function (parts) {
         var vals = []; parts.forEach(function (p) { if (!p) return; var w = p.win; for (var r = 0; r < w.h; r++) for (var c = 0; c < w.w; c++) { var v = w.values[r * w.w + c]; if (v !== v) continue; var E = w.x0 + (c + 0.5) * w.dx, N = w.y0 - (r + 0.5) * w.dy; var ll = proj4('EPSG:3857', 'EPSG:4326', [E, N]); if (MM.inSelection(ll[0], ll[1])) vals.push(v); } });
         Lz.avail[d.key] = vals.length ? { count: vals.length, p10: MM.percentile(vals, 0.10), p90: MM.percentile(vals, 0.90) } : null;
       });

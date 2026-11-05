@@ -15,7 +15,7 @@
   var U = { mode: 'pixel', start: 1985, end: 2022, stat: 'slope', rasters: {}, layers: {}, opacity: {}, stack: null, analysis: null, interaction: null, loading: false, reqId: 0 };
   var ui = {};
   function rasterUrl(y) { return MM.serverUrl('vegfrac/LS_' + y + '_VegetatedFraction.tif'); }
-  function openRaster(y) { if (U.rasters[y]) return U.rasters[y]; var p = parseGeoraster(rasterUrl(y)).catch(function (e) { delete U.rasters[y]; throw e; }); U.rasters[y] = p; return p; }
+  function openRaster(y) { if (U.rasters[y]) return U.rasters[y]; var p = MM.openCog(rasterUrl(y)).catch(function (e) { delete U.rasters[y]; throw e; }); U.rasters[y] = p; return p; }
   function clearInspect() { Object.keys(U.layers).forEach(function (y) { MM.removeToolLayer('vf:' + y); }); U.layers = {}; }
   function clearAnalysis() { ['analysis', 'drawn', 'marker'].forEach(MM.removeToolLayer); U.analysis = null; MM.stopDraw(); U.interaction = null; }
   function clearTool() { clearInspect(); clearAnalysis(); MM.clearToolLayers(); MM.setClickHandler(null); U.reqId++; U.loading = false; }

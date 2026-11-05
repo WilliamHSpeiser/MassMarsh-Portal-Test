@@ -1267,11 +1267,41 @@ window.MM = (function () {
   }
   function selectionMask(sensor) { var s = S.selection; if (!s) return null; var res = cube(sensor).res; s._gm = s._gm || {}; if (!s._gm[res]) s._gm[res] = gridMask(s.method === 'Bounding Boxes' && s.marshPolys ? s.marshPolys : s.polys, s.clip, res); return s._gm[res]; }
 
+  // ---------- server COGs: repair for the bundled GeoTIFF reader ----------
+  // georaster 1.6.0 bundles geotiff.js 1.0.0-beta.6, which cannot read sparse tiles: GDAL stores an all-nodata block with
+  // offset 0 and byte count 0, and every window that touches one fails ("buffer error"), so a LiDAR dataset looked unavailable
+  // wherever its footprint has gaps and map tiles over such blocks were never drawn. The first COG opened patches the shared
+  // GeoTIFFImage prototype so that an empty tile is served as a nodata-filled block; everything else goes through the original.
+  var cogPatched = false;
+  function emptyTile(img) {
+    var fd = img.fileDirectory; var bits = Array.isArray(fd.BitsPerSample) ? fd.BitsPerSample[0] : fd.BitsPerSample; var fmt = Array.isArray(fd.SampleFormat) ? fd.SampleFormat[0] : (fd.SampleFormat || 1);
+    var n = img.getTileWidth() * img.getTileHeight() * (img.planarConfiguration === 2 ? 1 : (fd.SamplesPerPixel || 1)); var nd = fd.GDAL_NODATA !== undefined ? parseFloat(fd.GDAL_NODATA) : 0;
+    var bytes = bits / 8, buf = new ArrayBuffer(n * bytes);
+    if (nd) { var dv = new DataView(buf), le = img.littleEndian; for (var i = 0; i < n; i++) { var o = i * bytes; if (fmt === 3) { if (bits === 64) dv.setFloat64(o, nd, le); else dv.setFloat32(o, nd, le); } else if (fmt === 2) { if (bits === 8) dv.setInt8(o, nd); else if (bits === 16) dv.setInt16(o, nd, le); else dv.setInt32(o, nd, le); } else { if (bits === 8) dv.setUint8(o, nd); else if (bits === 16) dv.setUint16(o, nd, le); else dv.setUint32(o, nd, le); } } }
+    return buf;
+  }
+  function patchCogReader(g) {
+    if (cogPatched || !g || !g._geotiff || !g._geotiff.getImage) return Promise.resolve(g);
+    return g._geotiff.getImage(0).then(function (img) {
+      var proto = Object.getPrototypeOf(img); if (cogPatched || !proto.getTileOrStrip) return g; cogPatched = true;
+      var orig = proto.getTileOrStrip;
+      proto.getTileOrStrip = function (x, y, sample) {
+        var fd = this.fileDirectory, perRow = Math.ceil(this.getWidth() / this.getTileWidth()), perCol = Math.ceil(this.getHeight() / this.getTileHeight());
+        var index = this.planarConfiguration === 2 ? sample * perRow * perCol + y * perRow + x : y * perRow + x;
+        var counts = this.isTiled ? fd.TileByteCounts : fd.StripByteCounts;
+        if (counts && counts[index] === 0) return Promise.resolve({ x: x, y: y, sample: sample, data: emptyTile(this) });
+        return orig.apply(this, arguments);
+      };
+      return g;
+    }).catch(function () { return g; });
+  }
+  function openCog(url) { return parseGeoraster(url).then(patchCogReader); }   // header only; windows are read later through HTTP range requests
+
   // ---------- slope rasters: small Landsat GeoTIFFs in the repo, large Sentinel-2 COGs on the servers read by window ----------
   var serverRasters = {};
   function openServerRaster(path) {                        // georaster URL mode: header only, windows are read through HTTP range requests
     if (serverRasters[path]) return serverRasters[path];
-    var p = parseGeoraster(serverUrl(path + '?v=' + dataV())).catch(function (e) { delete serverRasters[path]; throw e; }); serverRasters[path] = p; return p;
+    var p = openCog(serverUrl(path + '?v=' + dataV())).catch(function (e) { delete serverRasters[path]; throw e; }); serverRasters[path] = p; return p;
   }
   // in-memory georaster (every band) covering a lon/lat bbox of a server COG, read through the overview that keeps it under maxPx per side
   function loadServerRaster(path, bbox, maxPx) {
@@ -1834,7 +1864,7 @@ window.MM = (function () {
     removeLayer: removeLayer, addToolLayer: addToolLayer, removeToolLayer: removeToolLayer, clearToolLayers: clearToolLayers, clearAllLayers: clearAllLayers,
     armDraw: armDraw, stopDraw: stopDraw, isDrawing: isDrawing, setClickHandler: setClickHandler, addSwitcher: addSwitcher, removeSwitcher: removeSwitcher,
     linearFit: linearFit, xy: xy, fitSeries: fitSeries, percentile: percentile, nearestRank: nearestRank, rampColor: rampColor, hexToRgb: hexToRgb, seasonFilter: seasonFilter, seasonFilterKey: seasonFilterKey, glowLayer: glowLayer, ICONS: ICONS, limitIndexes: limitIndexes, imagerySwipe: imagerySwipe, stopSwipes: stopSwipes, tideStationFor: tideStationFor, tideTable: tideTable, TIDE_STATIONS: TIDE_STATIONS, dayPts: dayPts,
-    trendDataset: trendDataset, scatterDs: scatterDs, drawChart: drawChart, satTitle: satTitle, downloadChartCSV: downloadChartCSV, downloadChartPNG: downloadChart, chartCSV: chartCSV, csvText: csvText, downloadText: downloadText, safeName: safeName, caption: caption, seriesPanel: seriesPanel, legendBlock: legendBlock, mapLegend: mapLegend, mapOpacity: mapOpacity, imageryPair: imageryPair, imageryCatalog: imageryCatalog, setBasemap: setBasemap, startMeasure: startMeasure, busy: busy, listservDialog: listservDialog,
+    trendDataset: trendDataset, scatterDs: scatterDs, drawChart: drawChart, satTitle: satTitle, downloadChartCSV: downloadChartCSV, downloadChartPNG: downloadChart, chartCSV: chartCSV, csvText: csvText, downloadText: downloadText, safeName: safeName, caption: caption, seriesPanel: seriesPanel, legendBlock: legendBlock, mapLegend: mapLegend, mapOpacity: mapOpacity, imageryPair: imageryPair, imageryCatalog: imageryCatalog, openCog: openCog, setBasemap: setBasemap, startMeasure: startMeasure, busy: busy, listservDialog: listservDialog,
     cubeReady: cubeReady, cubeAvailable: cubeAvailable, cube: cube, CUBES: CUBES, pkey: pkey, platName: platName, loadBlock: loadBlock, cubeLocate: cubeLocate, cubeLocateUtm: cubeLocateUtm, pixelSeries: pixelSeries, pixelSeriesFromBlock: pixelSeriesFromBlock, meanSeries: meanSeries, pool: pool, gridMask: gridMask, cubePixelsInMask: cubePixelsInMask, selectionMask: selectionMask, bandIndex: bandIndex,
     POOL_DS: POOL_DS, POOL_PROVENANCE: POOL_PROVENANCE, poolDataset: poolDataset, poolSlopeProps: poolSlopeProps, poolSlopeOf: poolSlopeOf, poolStatsLine: poolStatsLine, poolSeriesPts: poolSeriesPts, seriesDir: seriesDir, enableSentinel2: enableSentinel2, loadServerRaster: loadServerRaster, loadSlopeRaster: loadSlopeRaster,
     compareOn: compareOn, compareOff: compareOff,
