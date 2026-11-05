@@ -932,6 +932,34 @@ window.MM = (function () {
     Promise.all([load(0), load(1)]).then(function () { if (!alive) return; if (o.note) o.note.remove(); caption(); anim = requestAnimationFrame(frame); }).catch(function (e) { if (o.note) o.note.textContent = 'Imagery not available: ' + e.message; else if (o.caption) o.caption.textContent = 'Imagery not available: ' + e.message; });
     return v;
   }
+  // two labelled stills of a feature for the reports: the oldest colour image from 1990 on (left) and the newest (right), the same
+  // choice the live view makes; same box, cyan outline; resolves to null when the archives do not cover the spot twice
+  function imageryPair(geometry, o) {
+    o = o || {}; if (typeof pmtiles === 'undefined') return Promise.resolve(null);
+    var fb = featureBbox({ geometry: geometry }); var u0 = toUtm(fb[0], fb[1]), u1 = toUtm(fb[2], fb[3]); var pad = o.pad || 30;
+    var e0 = u0[0] - pad, n0 = u0[1] - pad, e1 = u1[0] + pad, n1 = u1[1] + pad; var cx = (e0 + e1) / 2, cy = (n0 + n1) / 2, half = Math.max(o.minBox || 150, e1 - e0, n1 - n0) / 2; e0 = cx - half; e1 = cx + half; n0 = cy - half; n1 = cy + half;
+    var c0 = fromUtm(e0, n0), c1 = fromUtm(e1, n1); var b = [c0[0], c0[1], c1[0], c1[1]]; var wM = e1 - e0, hM = n1 - n0;
+    function isRgb(im) { return !/_BW\b/i.test(im.key || '') && !/^(AutoGeoreferencer|NHAP)$/.test(im.source || ''); }
+    return imageryCatalog().then(function (cat) {
+      var imgs = (cat.images || []).filter(function (im) { return im.footprint && coversBox(im, b); }).sort(function (p, q) { return catYear(p) - catYear(q); });
+      var since90 = imgs.filter(function (im) { return catYear(im) >= 1990; }); var sel = [since90.filter(isRgb)[0] || since90[0] || imgs[0], imgs.length ? imgs[imgs.length - 1] : null];
+      if (!sel[0] || !sel[1] || sel[0].key === sel[1].key) return null;
+      var Z = 18, X0 = lon2x(b[0], Z), X1 = lon2x(b[2], Z), Y0 = lat2y(b[3], Z), Y1 = lat2y(b[1], Z); var closed = /Polygon$/.test(geometry.type);
+      var paths = closed ? ringsOf(geometry).reduce(function (a, poly) { return a.concat(poly); }, []) : (geometry.type === 'LineString' ? [geometry.coordinates] : geometry.type === 'MultiLineString' ? geometry.coordinates : []);
+      paths = paths.map(function (ring) { return ring.map(function (q) { return [(lon2x(q[0], Z) - X0) / (X1 - X0), (lat2y(q[1], Z) - Y0) / (Y1 - Y0)]; }); });
+      var W = o.size || 320, H = Math.round(W * hM / wM);
+      function still(im) {
+        return fetchWindow(im, b, W, H).then(function (cv) {
+          stretchContrast(cv); var g = cv.getContext('2d'); g.save(); g.lineJoin = 'round'; g.lineCap = 'round'; g.strokeStyle = '#00ffff'; g.shadowColor = 'rgba(0,255,255,0.95)';
+          paths.forEach(function (r) { g.beginPath(); r.forEach(function (pt, i) { if (i) g.lineTo(pt[0] * W, pt[1] * H); else g.moveTo(pt[0] * W, pt[1] * H); }); if (closed) g.closePath(); g.shadowBlur = 8; g.lineWidth = 1.4; g.stroke(); g.shadowBlur = 3; g.stroke(); });
+          if (geometry.type === 'Point' || geometry.type === 'MultiPoint') { g.beginPath(); g.arc(W / 2, H / 2, 7, 0, 2 * Math.PI); g.shadowBlur = 6; g.lineWidth = 2; g.stroke(); }
+          g.restore();
+          return { dataUrl: cv.toDataURL('image/png'), label: im.year + ' ' + (SRC_LABEL[im.source] || im.source) + (im.type ? ' (' + im.type + ')' : '') + (im.gsd_m ? ', ' + (im.gsd_m >= 1 ? im.gsd_m.toFixed(1) + ' m' : Math.round(im.gsd_m * 100) + ' cm') : ''), year: im.year, source: im.source };
+        });
+      }
+      return Promise.all([still(sel[0]), still(sel[1])]).then(function (r) { return { left: r[0], right: r[1], wM: Math.round(wM), hM: Math.round(hM) }; });
+    }).catch(function () { return null; });
+  }
   function openSwipeModal(st) {                                // the swipe near full-window size: same images, titles, menus; Download GIF; X / Esc / backdrop closes
     var ov = el('div', 'pv-chart-modal'); var box = el('div', 'pv-chart-modal-box'); ov.appendChild(box);
     var x = el('button', 'pv-chart-modal-x'); x.type = 'button'; x.title = 'Close'; x.innerHTML = ICONS.x; box.appendChild(x);
@@ -1806,7 +1834,7 @@ window.MM = (function () {
     removeLayer: removeLayer, addToolLayer: addToolLayer, removeToolLayer: removeToolLayer, clearToolLayers: clearToolLayers, clearAllLayers: clearAllLayers,
     armDraw: armDraw, stopDraw: stopDraw, isDrawing: isDrawing, setClickHandler: setClickHandler, addSwitcher: addSwitcher, removeSwitcher: removeSwitcher,
     linearFit: linearFit, xy: xy, fitSeries: fitSeries, percentile: percentile, nearestRank: nearestRank, rampColor: rampColor, hexToRgb: hexToRgb, seasonFilter: seasonFilter, seasonFilterKey: seasonFilterKey, glowLayer: glowLayer, ICONS: ICONS, limitIndexes: limitIndexes, imagerySwipe: imagerySwipe, stopSwipes: stopSwipes, tideStationFor: tideStationFor, tideTable: tideTable, TIDE_STATIONS: TIDE_STATIONS, dayPts: dayPts,
-    trendDataset: trendDataset, scatterDs: scatterDs, drawChart: drawChart, satTitle: satTitle, downloadChartCSV: downloadChartCSV, downloadChartPNG: downloadChart, chartCSV: chartCSV, csvText: csvText, downloadText: downloadText, safeName: safeName, caption: caption, seriesPanel: seriesPanel, legendBlock: legendBlock, mapLegend: mapLegend, mapOpacity: mapOpacity, imageryCatalog: imageryCatalog, setBasemap: setBasemap, startMeasure: startMeasure, busy: busy, listservDialog: listservDialog,
+    trendDataset: trendDataset, scatterDs: scatterDs, drawChart: drawChart, satTitle: satTitle, downloadChartCSV: downloadChartCSV, downloadChartPNG: downloadChart, chartCSV: chartCSV, csvText: csvText, downloadText: downloadText, safeName: safeName, caption: caption, seriesPanel: seriesPanel, legendBlock: legendBlock, mapLegend: mapLegend, mapOpacity: mapOpacity, imageryPair: imageryPair, imageryCatalog: imageryCatalog, setBasemap: setBasemap, startMeasure: startMeasure, busy: busy, listservDialog: listservDialog,
     cubeReady: cubeReady, cubeAvailable: cubeAvailable, cube: cube, CUBES: CUBES, pkey: pkey, platName: platName, loadBlock: loadBlock, cubeLocate: cubeLocate, cubeLocateUtm: cubeLocateUtm, pixelSeries: pixelSeries, pixelSeriesFromBlock: pixelSeriesFromBlock, meanSeries: meanSeries, pool: pool, gridMask: gridMask, cubePixelsInMask: cubePixelsInMask, selectionMask: selectionMask, bandIndex: bandIndex,
     POOL_DS: POOL_DS, POOL_PROVENANCE: POOL_PROVENANCE, poolDataset: poolDataset, poolSlopeProps: poolSlopeProps, poolSlopeOf: poolSlopeOf, poolStatsLine: poolStatsLine, poolSeriesPts: poolSeriesPts, seriesDir: seriesDir, enableSentinel2: enableSentinel2, loadServerRaster: loadServerRaster, loadSlopeRaster: loadSlopeRaster,
     compareOn: compareOn, compareOff: compareOff,
