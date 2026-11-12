@@ -106,11 +106,21 @@
     var l = el('div', 'pv-swatch-labels'); l.style.width = '140px'; l.appendChild(el('span', '', fmtStat(mn))); l.appendChild(el('span', '', fmtStat(mx))); container.appendChild(l);
     var f = el('div', 'pv-credit', '*(Vegetated Fraction, displayed as %)'); f.style.cssText = 'color:#888;font-style:italic'; container.appendChild(f);
   }
+  // distribution of the statistic over the study area (Brian, 2026-11-12): histogram, and for slopes the share losing / gaining vegetation
+  function statHistogram(values, unitWord) {
+    if (!ui.hist) return; ui.hist.innerHTML = ''; if (!values.length) return;
+    var pct = values.map(function (v) { return v * 100; }); var slope = U.stat === 'slope'; var one = unitWord === 'pixels' ? 'pixel' : 'marsh unit';
+    ui.hist.appendChild(el('div', 'pv-h', STAT_LABEL[U.stat] + ' distribution (' + U.start + '-' + U.end + ', ' + values.length + ' ' + unitWord + (unitWord === 'pixels' ? ' in the study area' : '') + '):'));
+    if (slope) { var neg = 0, pos = 0; values.forEach(function (v) { if (v < 0) neg++; else if (v > 0) pos++; }); var zero = values.length - neg - pos; var f = function (k) { return (k / values.length * 100).toFixed(1) + '%'; };
+      var line = el('div', 'pv-small', f(neg) + ' of the ' + unitWord + ' lost vegetation (slope < 0) and ' + f(pos) + ' gained (slope > 0)' + (zero ? '; ' + f(zero) + ' no change' : '') + '.'); line.style.fontWeight = 'bold'; ui.hist.appendChild(line); }
+    var box = el('div'); ui.hist.appendChild(box);
+    MM.panelHistogram(box, pct, '% Vegetated ' + STAT_LABEL[U.stat] + ' per ' + one + ' (' + U.start + '-' + U.end + ')', slope ? 'Slope (% vegetated per year)' : STAT_LABEL[U.stat] + ' (% vegetated)', [PALETTE[1], PALETTE[5]], slope ? ['Losing vegetation (slope < 0)', 'Gaining vegetation (slope > 0)'] : null, unitWord === 'pixels' ? 'Pixels' : 'Marsh units');
+  }
   function showAnalyzeResults() {
     ui = {}; clearAnalysis(); MM.clearSide(); MM.titlePanel('UVVR Viewer - Analyze');
     var h = add(el('div', 'pv-h', U.start + ' - ' + U.end + ' | ' + STAT_LABEL[U.stat] + ' | ' + (U.mode === 'pixel' ? 'Pixel-wise' : 'Marsh Unit-wise')));
     ui.loading = add(el('div', 'pv-grey', 'Generating statistics...'));
-    ui.legend = add(el('div'));
+    ui.legend = add(el('div')); ui.hist = add(el('div')); ui.hist.style.margin = '8px 0';
     thin(); add(el('div', 'pv-h lg', 'Explore Time Series:'));
     ui.prompt = add(el('div', 'pv-grey', U.mode === 'pixel' ? 'Click on a pixel to view time series at that location.' : 'Click on a marsh unit to view its average time series.'));
     if (U.mode === 'pixel') {
@@ -148,7 +158,7 @@
       var g = { noDataValue: -9999, projection: 4326, xmin: stack.xmin, xmax: stack.xmin + W * stack.px, ymin: stack.ymax - H * stack.py, ymax: stack.ymax, pixelWidth: stack.px, pixelHeight: stack.py, width: W, height: H, numberOfRasters: 1, values: [rows] };
       U.analysis = { stack: stack, grid: out, min: mn, max: mx };
       MM.addToolLayer('analysis', new GeoRasterLayer({ georaster: g, opacity: 1, resolution: 128, mask: S.selection.maskGeometry, mask_strategy: 'outside', pixelValuesToColorFn: function (px) { var v = px[0]; if (v === null || v === undefined || !isFinite(v) || v === -9999) return null; return MM.rampColor(v, PALETTE, mn, mx); } }));
-      setStatus(ui.loading, '✓ Raster generated', 'green'); analyzeLegend(ui.legend, mn, mx);
+      setStatus(ui.loading, '✓ Raster generated', 'green'); analyzeLegend(ui.legend, mn, mx); statHistogram(vals, 'pixels');
     }).catch(function (e) { if (req !== U.reqId) return; setStatus(ui.loading, 'Error generating raster. ' + (e.message || ''), '#c00'); });
   }
   function unitStat(means, uid) { var xs = [], ys = []; yearsInRange().forEach(function (yy) { var m = means[uid] && means[uid][yy]; if (m) { xs.push(yy); ys.push(m[0]); } }); return { stat: statOfSeries(U.stat, xs, ys), xs: xs, ys: ys }; }
@@ -162,7 +172,7 @@
       U.analysis = { means: means, min: mn, max: mx };
       MM.addToolLayer('analysis', L.geoJSON({ type: 'FeatureCollection', features: feats }, { renderer: MM.canvas, style: function (f) { var v = vals[f.properties.uid]; var norm = v === undefined ? 0.5 : Math.max(0, Math.min(1, (v - mn) / (mx - mn))); var c = PALETTE[Math.min(6, Math.floor(norm * 6))]; if (norm === 1) c = PALETTE[6]; return { color: c, fillColor: c, weight: 1, fillOpacity: 0.67 }; },
         onEachFeature: function (f, lyr) { lyr.on('click', function (e) { L.DomEvent.stop(e); if (U.loading || U.interaction !== 'pixel') return; unitSeries(f); }); } }));
-      setStatus(ui.loading, '✓ Statistics computed for ' + feats.length + ' marsh units', 'green'); analyzeLegend(ui.legend, mn, mx);
+      setStatus(ui.loading, '✓ Statistics computed for ' + feats.length + ' marsh units', 'green'); analyzeLegend(ui.legend, mn, mx); statHistogram(list, 'marsh units');
     }).catch(function () { if (req !== U.reqId) return; setStatus(ui.loading, 'Error or no marsh units found.', '#c00'); });
   }
 

@@ -67,6 +67,19 @@
   function selectionOutline(ctx, project, color, width) { var sel = S.selection; var polys = sel.clip ? sel.clip : (sel.method === 'Bounding Boxes' ? MM.ringsOf(sel.rectangleGeometry) : sel.polys); drawPolys(ctx, project, polys, color, width, null); }
   function padBox(b, m) { var dLat = m / 111320, dLon = m / (111320 * Math.cos((b[1] + b[3]) / 2 * Math.PI / 180)); return [b[0] - dLon, b[1] - dLat, b[2] + dLon, b[3] + dLat]; }
 
+  function rankLabels(ctx, project, feats, size) {           // numbers 1..n at the highlighted pools (the ranks of the report cards), nudged apart when they collide
+    var placed = [], Rr = 9, cands = [[14, -14], [-14, -14], [14, 14], [-14, 14], [0, -19], [0, 19], [19, 0], [-19, 0], [27, -27], [-27, -27], [27, 27], [-27, 27]];
+    feats.forEach(function (f, i) {
+      var bb = MM.featureBbox(f); var c = project((bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2); var txt = String(i + 1); var pos = null;
+      for (var k = 0; k < cands.length && !pos; k++) { var x = c[0] + cands[k][0], y = c[1] + cands[k][1]; if (x < Rr + 1 || y < Rr + 1 || x > size - Rr - 1 || y > size - Rr - 1) continue; if (!placed.some(function (q) { return Math.hypot(q[0] - x, q[1] - y) < 2 * Rr + 2; })) pos = [x, y]; }
+      if (!pos) pos = [Math.max(Rr + 1, Math.min(size - Rr - 1, c[0] + 14)), Math.max(Rr + 1, Math.min(size - Rr - 1, c[1] - 14))];
+      placed.push(pos); ctx.save(); ctx.lineWidth = 1.5; ctx.strokeStyle = '#111';
+      ctx.beginPath(); ctx.moveTo(c[0], c[1]); ctx.lineTo(pos[0], pos[1]); ctx.stroke(); ctx.beginPath(); ctx.arc(c[0], c[1], 2.5, 0, 2 * Math.PI); ctx.fillStyle = '#111'; ctx.fill();
+      ctx.beginPath(); ctx.arc(pos[0], pos[1], Rr, 0, 2 * Math.PI); ctx.fillStyle = '#fff'; ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#111'; ctx.font = 'bold ' + (txt.length > 1 ? 10 : 11) + 'px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(txt, pos[0], pos[1] + 0.5); ctx.restore();
+    });
+  }
+
   // ---------- SVG charts for the HTML report ----------
   function svgTimeSeries(pts, storedSlope, W, H, yTitle, opts) {
     opts = opts || {}; if (!pts.length) return '<p style="color: #666;">No time series data available</p>';
@@ -90,28 +103,7 @@
     s += '<text x="' + (mL + iw / 2) + '" y="' + (H - 5) + '" font-size="10" text-anchor="middle">Year</text><text transform="translate(12,' + (mT + ih / 2) + ') rotate(-90)" font-size="9" text-anchor="middle">' + esc(yTitle) + '</text></svg>';
     return s;
   }
-  // Histogram binning shared by the panel charts and the downloaded report (user request 2026-10-22): the axis follows the
-  // data (1st-99th percentile for 100+ values, min-max below that), always includes zero, zero is always a bin edge, the bin
-  // width is a round number, bins number 2*sqrt(n) clamped to 6..30, and values beyond the axis are counted in the end bins.
-  function niceStep(x) { if (!(x > 0)) return 0.001; var p = Math.pow(10, Math.floor(Math.log10(x))), r = x / p; return (r <= 1 ? 1 : r <= 2 ? 2 : r <= 2.5 ? 2.5 : r <= 5 ? 5 : 10) * p; }
-  function histBins(slopes) {
-    var v = slopes.filter(function (x) { return x !== null && x !== undefined && isFinite(x); }).sort(function (a, b) { return a - b; }); var n = v.length; if (!n) return null;
-    var pct = n >= 100; var lo = pct ? MM.percentile(v, 0.01) : v[0], hi = pct ? MM.percentile(v, 0.99) : v[n - 1];
-    lo = Math.min(lo, 0); hi = Math.max(hi, 0);
-    if (hi - lo < 0.004) { var c = (lo + hi) / 2; lo = Math.min(0, c - 0.002); hi = Math.max(0, c + 0.002); }
-    var nb = Math.max(6, Math.min(30, Math.round(2 * Math.sqrt(n)))), span = hi - lo;
-    var nNeg = Math.round(nb * (-lo) / span), nPos = nb - nNeg;
-    if (lo < 0 && nNeg === 0) { nNeg = 1; nPos = nb - 1; } if (hi > 0 && nPos === 0) { nPos = 1; nNeg = nb - 1; }
-    var w = +niceStep(Math.max(nNeg ? -lo / nNeg : 0, nPos ? hi / nPos : 0)).toFixed(10); lo = +(-nNeg * w).toFixed(10); hi = +(nPos * w).toFixed(10);   /* rounded: no float noise in labels */
-    var neg = new Array(nb).fill(0), pos = new Array(nb).fill(0), below = 0, above = 0;
-    v.forEach(function (x) { var b = Math.floor((x - lo) / w + 1e-9); if (b < 0) { b = 0; below++; } if (b >= nb) { b = nb - 1; above++; } if (x < 0) neg[b]++; else pos[b]++; });
-    var tick = niceStep(span / 6), ticks = []; for (var t = Math.ceil(lo / tick - 1e-9) * tick; t <= hi + 1e-9; t += tick) ticks.push(+t.toFixed(6));
-    return { neg: neg, pos: pos, centres: neg.map(function (_, i) { return lo + (i + 0.5) * w; }), lo: lo, hi: hi, width: w, n: n, nb: nb, below: below, above: above, pct: pct, ticks: ticks };
-  }
-  function histNote(b) {                                      // one line under the chart: what the axis covers and where the outliers went
-    var out = (b.below + b.above); return (b.pct ? 'Axis spans the 1st to 99th percentile of ' + b.n + ' values' : 'Axis spans all ' + b.n + ' values') + (out ? '; ' + out + ' beyond it ' + (out === 1 ? 'is' : 'are') + ' counted in the end bar' + (out === 1 ? '' : 's') : '') + '. ' + b.nb + ' bins of ' + (+b.width.toFixed(6)) + '.';
-  }
-  function fmtTick(x) { return (+x.toFixed(5)).toString(); }
+  var niceStep = MM.niceStep, histBins = MM.histBins, histNote = MM.histNote, fmtTick = MM.fmtTick;   // histogram binning lives in core.js (shared with the UVVR Viewer)
   function pairHtml(pair, locator, border) {                 // oldest and newest archive images side by side, feature outlined in cyan; a card with no archive pair falls back to today's Esri locator
     if (pair) return '<div class="mm-pair"><figure><img src="' + pair.left.dataUrl + '" alt="' + esc(pair.left.label) + '"><figcaption>' + esc(pair.left.label) + '</figcaption></figure><figure><img src="' + pair.right.dataUrl + '" alt="' + esc(pair.right.label) + '"><figcaption>' + esc(pair.right.label) + '</figcaption></figure></div>';
     if (locator) return '<div class="mm-pair"><figure><img src="' + locator + '" alt="Location" style="border:2px solid ' + (border || '#999') + '"><figcaption>Location (Esri World Imagery)</figcaption></figure></div>';
@@ -130,22 +122,7 @@
     s += '<text x="' + (mL + iw / 2) + '" y="' + (H - 20) + '" font-size="10" text-anchor="middle">' + esc(xLabel) + '</text><text x="' + (mL + iw / 2) + '" y="' + (H - 7) + '" font-size="8" fill="#666" text-anchor="middle">' + esc(histNote(b)) + '</text><text transform="translate(14,' + (mT + ih / 2) + ') rotate(-90)" font-size="10" text-anchor="middle">Count</text></svg>';
     return s;
   }
-  function panelHistogram(container, slopes, title, xLabel, colors, labels, yLabel) {   // labels: [negative, positive] legend texts (the wetter / drier counts live here)
-    var b = histBins(slopes); container.innerHTML = ''; if (!b) return;
-    var ds = [{ label: labels ? labels[0] : words().neg, data: b.centres.map(function (c, i) { return { x: c, y: b.neg[i] }; }), backgroundColor: colors[0] }, { label: labels ? labels[1] : words().pos, data: b.centres.map(function (c, i) { return { x: c, y: b.pos[i] }; }), backgroundColor: colors[1] }];
-    var wrap = el('div', 'pv-chart-wrap'); wrap.style.height = '190px'; var cv = el('canvas'); wrap.appendChild(cv); container.appendChild(wrap);
-    if (container._chart) container._chart.destroy();
-    container._chart = new Chart(cv, { type: 'bar', data: { datasets: ds }, options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { display: true, position: 'top', align: 'end', labels: { boxWidth: 10, font: { size: 10 } } }, title: { display: true, text: title, font: { size: 11 } }, subtitle: { display: true, text: histNote(b), font: { size: 9, style: 'italic' }, color: '#666', position: 'bottom' } },
-      scales: { x: { type: 'linear', min: b.lo, max: b.hi, stacked: true, title: { display: true, text: xLabel }, ticks: { font: { size: 9 }, callback: function (v) { return fmtTick(v); } }, afterBuildTicks: function (axis) { axis.ticks = b.ticks.map(function (t) { return { value: t }; }); }, offset: false }, y: { stacked: true, beginAtZero: true, title: { display: true, text: yLabel || 'Count' } } }, datasets: { bar: { barPercentage: 0.9, categoryPercentage: 1 } } } });
-    var links = el('div', 'pv-chart-links');                     // the histogram's bins as CSV, the chart as PNG
-    links.appendChild(button('Download CSV', function () {
-      var rows = [['bin_low', 'bin_high', 'bin_centre', 'count_negative_slope', 'count_positive_slope', 'total_count']];
-      b.centres.forEach(function (cc, i) { rows.push([+(b.lo + i * b.width).toFixed(6), +(b.lo + (i + 1) * b.width).toFixed(6), +cc.toFixed(6), b.neg[i], b.pos[i], b.neg[i] + b.pos[i]]); });
-      MM.downloadText(MM.safeName(title, '.csv'), MM.csvText(rows));
-    }, 'small'));
-    links.appendChild(button('Download PNG', function () { MM.downloadChartPNG(wrap, null, title); }, 'small'));
-    container.appendChild(links);
-  }
+  function panelHistogram(container, slopes, title, xLabel, colors, labels, yLabel) { return MM.panelHistogram(container, slopes, title, xLabel, colors, labels || [words().neg, words().pos], yLabel); }
 
   // ======================================================================
   // Marsh Assessment Report
@@ -251,15 +228,31 @@
     });
   }
   function topPoolList() { var out = []; for (var i = 0; i < A.poolCandidates.length && out.length < A.opts.numPools; i++) { var f = A.poolCandidates[i]; if (!A.excludedPools['pid:' + f.properties.pid]) out.push(f); } return out; }
+  // the highlighted pools as GeoJSON / KML, numbered as in the report (rank 1 = strongest wetting trend)
+  function topPoolFeatures(feats) {
+    return { type: 'FeatureCollection', features: feats.map(function (f, i) { var p = f.properties; var b = MM.featureBbox(f); return { type: 'Feature', geometry: f.geometry, properties: { rank: i + 1, name: 'Pool ' + p.st + '-' + p.pid, state: p.st, pool_id: p.pid, area_m2: (p.a !== null && p.a !== undefined) ? Math.round(p.a) : null, lat: +((b[1] + b[3]) / 2).toFixed(6), lon: +((b[0] + b[2]) / 2).toFixed(6), mndwi_slope_per_yr: (p.sl !== null && p.sl !== undefined) ? +p.sl.toFixed(6) : null, t: (p.t !== null && p.t !== undefined) ? +Number(p.t).toFixed(2) : null, n_scenes: p.n || null, significant: p.sig === 1 } }; }) };
+  }
+  function topPoolKml(feats) {
+    var st = A.stats.pools || {};
+    return MM.toKML(feats, { name: 'MassMarsh Assessment Report: highlighted pools', folder: 'Pools ranked by Landsat MNDWI slope (summer scenes 1985-2026)',
+      nameOf: function (f, i) { return (i + 1) + '. Pool ' + f.properties.st + '-' + f.properties.pid; },
+      descOf: function (f, i) { var p = f.properties; return 'Rank ' + (i + 1) + ' of ' + feats.length + '<br>' + esc(statsShort(p)) + ((p.a !== null && p.a !== undefined) ? '<br>Area: ' + Math.round(p.a) + ' m2' : ''); },
+      colorOf: function (f) { var v = f.properties.sl; return (v === null || v === undefined || st.colorMin === undefined) ? '#888888' : MM.rampColor(v, POOL_D.palette, st.colorMin, st.colorMax); } });
+  }
+  function downloadTopPools(feats, kind) { if (kind === 'kml') MM.downloadText('massmarsh_report_pools.kml', topPoolKml(feats), 'application/vnd.google-earth.kml+xml;charset=utf-8'); else MM.downloadText('massmarsh_report_pools.geojson', JSON.stringify(topPoolFeatures(feats)), 'application/geo+json;charset=utf-8'); }
+  function topPoolLinks(feats) {                               // download links embedded in the HTML report (small data URLs)
+    if (!feats.length) return '';
+    return '<p style="font-size:11px"><a download="massmarsh_report_pools.kml" href="data:application/vnd.google-earth.kml+xml;charset=utf-8,' + encodeURIComponent(topPoolKml(feats)) + '">Download these pools as KML</a> | <a download="massmarsh_report_pools.geojson" href="data:application/geo+json;charset=utf-8,' + encodeURIComponent(JSON.stringify(topPoolFeatures(feats))) + '">GeoJSON</a> (numbered as in the pools figure)</p>';
+  }
   function renderTopPools() {
     aui.topPools.innerHTML = ''; var top = topPoolList(); A.stats.topPools = top;
     Object.keys(MM.layers.tool).forEach(function (k) { if (k.indexOf('gid:') === 0) MM.removeToolLayer(k); });
-    var multi = top.some(function (f) { return f.properties.st !== top[0].properties.st; });
-    top.forEach(function (f) { var b = MM.featureBbox(f); var lbl = multi ? f.properties.st + ' ' + f.properties.pid : String(f.properties.pid); MM.addToolLayer('gid:' + f.properties.pid, L.marker([b[3], (b[0] + b[2]) / 2], { interactive: false, icon: L.divIcon({ className: 'pv-gid-label', html: '<span style="color:#d7191c;font:16px Arial;text-shadow:0 0 2px #fff,0 0 2px #fff;white-space:nowrap">' + lbl + '</span>', iconAnchor: [0, 18] }) })); });
+    top.forEach(function (f, i) { var b = MM.featureBbox(f); var lbl = String(i + 1); MM.addToolLayer('gid:' + f.properties.pid, L.marker([b[3], (b[0] + b[2]) / 2], { interactive: false, icon: L.divIcon({ className: 'pv-gid-label', html: '<span style="color:#d7191c;font:16px Arial;text-shadow:0 0 2px #fff,0 0 2px #fff;white-space:nowrap">' + lbl + '</span>', iconAnchor: [0, 18] }) })); });
     aui.topPools.appendChild(el('div', 'pv-thin')); aui.topPools.appendChild(el('div', 'pv-h', 'Pools highlighted in the report (' + top.length + '):'));
-    aui.topPools.appendChild(el('div', 'pv-note', 'Ranked by Landsat MNDWI slope (summer scenes 1985-2026); Remove drops a pool and the next-ranked pool takes its place.')); var fb = poolFallback(); if (fb) { var n = el('div', 'pv-note', fb); n.style.color = '#a65a00'; aui.topPools.appendChild(n); }
+    aui.topPools.appendChild(el('div', 'pv-note', 'Ranked by Landsat MNDWI slope (summer scenes 1985-2026), 1 = strongest wetting trend; the numbers match the report figure and cards. Remove drops a pool and the next-ranked pool takes its place.')); var fb = poolFallback(); if (fb) { var n = el('div', 'pv-note', fb); n.style.color = '#a65a00'; aui.topPools.appendChild(n); }
     if (!top.length) { var e0 = el('div', 'pv-grey', 'No pools left to highlight.'); aui.topPools.appendChild(e0); }
-    top.forEach(function (f) { var p = f.properties; var row = el('div', 'pv-pool-row'); row.appendChild(el('span', '', poolTitle(p) + ' | ' + (p.a !== null && p.a !== undefined ? Math.round(p.a) + ' m2' : 'area n/a') + ' | ' + statsShort(p))); row.appendChild(button('Remove', function () { A.excludedPools['pid:' + p.pid] = true; renderTopPools(); }, 'x')); aui.topPools.appendChild(row); });
+    top.forEach(function (f, i) { var p = f.properties; var row = el('div', 'pv-pool-row'); row.appendChild(el('span', '', (i + 1) + '. ' + poolTitle(p) + ' | ' + (p.a !== null && p.a !== undefined ? Math.round(p.a) + ' m2' : 'area n/a') + ' | ' + statsShort(p))); row.appendChild(button('Remove', function () { A.excludedPools['pid:' + p.pid] = true; renderTopPools(); }, 'x')); aui.topPools.appendChild(row); });
+    if (top.length) { var dl = el('div', 'pv-row'); dl.appendChild(el('span', 'pv-note', 'Download these pools, numbered as in the report:')); dl.appendChild(button('KML', function () { downloadTopPools(top, 'kml'); }, 'small')); dl.appendChild(button('GeoJSON', function () { downloadTopPools(top, 'geojson'); }, 'small')); aui.topPools.appendChild(dl); }
     var k = Object.keys(A.excludedPools).length; if (k) aui.topPools.appendChild(button('Restore removed pools (' + k + ')', function () { A.excludedPools = {}; renderTopPools(); }, 'small'));
   }
   function ditchStats() {
@@ -412,10 +405,10 @@
     var thumbs = {}; var jobs = [];
     jobs.push(renderThumb(bbox, 800, function (ctx, pr) { selectionOutline(ctx, pr, 'cyan', 2); }).then(function (u) { thumbs.boundary = u; log('  - Boundary thumbnail created'); }));
     if (A.opts.marshWide && st.georaster) jobs.push(renderThumb(bbox, 800, function (ctx, pr) { drawRaster(ctx, pr, st.georaster, function (v) { return MM.rampColor(v, pal, st.slopeMin, st.slopeMax); }, bbox); selectionOutline(ctx, pr, 'rgba(255,255,0,0.5)', 1); }).then(function (u) { thumbs.slope = u; log('  - Slope thumbnail created'); }));
-    if (A.opts.pools && st.pools && st.pools.count) jobs.push(renderThumb(bbox, 800, function (ctx, pr) { st.poolFeats.forEach(function (f) { var v = f.properties.sl; var c = (v === null || v === undefined) ? '#888888' : threeClass(v, st.pools.colorMin, st.pools.colorMax, POOL_D.palette); drawFeature(ctx, pr, f, c, 1, c + '88'); }); selectionOutline(ctx, pr, 'rgba(255,255,0,0.5)', 1); }).then(function (u) { thumbs.pools = u; log('  - Pools thumbnail created'); }));
+    var topPools = A.opts.pools ? (st.topPools || []).slice(0, 25) : []; var topUnits = A.opts.marshUnits ? (st.topUnits || []).slice(0, 25) : [];
+    if (A.opts.pools && st.pools && st.pools.count) jobs.push(renderThumb(bbox, 800, function (ctx, pr) { st.poolFeats.forEach(function (f) { var v = f.properties.sl; var c = (v === null || v === undefined) ? '#888888' : threeClass(v, st.pools.colorMin, st.pools.colorMax, POOL_D.palette); drawFeature(ctx, pr, f, c, 1, c + '88'); }); selectionOutline(ctx, pr, 'rgba(255,255,0,0.5)', 1); rankLabels(ctx, pr, topPools, 800); }).then(function (u) { thumbs.pools = u; log('  - Pools thumbnail created (' + topPools.length + ' numbered)'); }));
     if (A.opts.ditches && st.ditches && st.ditches.count) jobs.push(renderThumb(bbox, 800, function (ctx, pr) { var prop = DITCH_SLOPE[idx]; st.ditchFeats.forEach(function (f) { var v = prop ? f.properties[prop] : null; if (v === null || v === undefined) return; drawFeature(ctx, pr, f, threeClass(v, st.ditches.colorMin, st.ditches.colorMax, pal), 2, null); }); selectionOutline(ctx, pr, 'rgba(255,255,0,0.5)', 1); }).then(function (u) { thumbs.ditches = u; log('  - Ditches thumbnail created'); }));
     if (A.opts.marshUnits && st.units && st.units.count) jobs.push(renderThumb(bbox, 800, function (ctx, pr) { var prop = UNIT_SLOPE[idx]; st.unitFeats.forEach(function (f) { var v = f.properties[prop]; if (v === null || v === undefined) return; var c = threeClass(v, st.units.colorMin, st.units.colorMax, pal); drawFeature(ctx, pr, f, c, 1, c); }); selectionOutline(ctx, pr, 'rgba(255,255,0,0.5)', 1); }).then(function (u) { thumbs.units = u; log('  - Marsh units thumbnail created'); }));
-    var topPools = A.opts.pools ? (st.topPools || []).slice(0, 25) : []; var topUnits = A.opts.marshUnits ? (st.topUnits || []).slice(0, 25) : [];
     var cards = { pools: [], units: [] };
     log('Processing top pools...');
     topPools.forEach(function (f, i) { jobs.push(Promise.all([MM.featureSeries(f, true), MM.imageryPair(f.geometry, { pad: 30, minBox: 150, size: 320 }).then(function (pair) { if (pair) return { pair: pair, img: null }; return renderThumb(padBox(MM.featureBbox(f), 30), 400, function (ctx, pr) { drawFeature(ctx, pr, f, '#e63946', 2, null); }).then(function (u) { return { pair: null, img: u }; }); })]).then(function (r) { cards.pools[i] = { f: f, pts: r[0].pts, img: r[1].img, pair: r[1].pair }; }).catch(function () { cards.pools[i] = { f: f, pts: [], img: null, pair: null }; })); });
@@ -434,11 +427,11 @@
       if (A.opts.marshUnits && st.units) { var us = st.units; h += '<h2>Marsh Unit Statistics</h2><table class="stats-table"><tr><th>Metric</th><th>Value</th></tr><tr><td>Total Marsh Units</td><td>' + us.count + '</td></tr><tr><td class="positive">' + w.pos + ' (slope ≥ 0)</td><td>' + us.wetter + '</td></tr><tr><td class="negative">' + w.neg + ' (slope &lt; 0)</td><td>' + us.drier + '</td></tr></table>' + svgHistogram(us.slopes, 'Marsh Unit ' + idx + ' Slope Distribution', 400, 200, { negative: w.negC, positive: w.posC }, 'Slope (' + idx + '/year)'); }
       h += '<h2>Site Maps</h2><div class="map-container"><h3>Site Boundary</h3>' + (thumbs.boundary ? '<img src="' + thumbs.boundary + '" alt="Site Boundary">' : '') + '<p style="font-size:10px;color:#666">Cyan outline on satellite imagery</p></div>';
       if (thumbs.slope) h += '<div class="map-container"><h3>Landsat ' + idx + ' Slope</h3><img src="' + thumbs.slope + '" alt="Slope Map"><div class="legend-bar"></div><div class="legend-labels"><span>' + w.neg + ' (' + fmtNum(st.slopeMin, 3) + ')</span><span>' + w.pos + ' (' + fmtNum(st.slopeMax, 3) + ')</span></div></div>';
-      if (thumbs.pools) h += '<div class="map-container"><h3>Pools (' + POOL_D.shortLabel + ' slope, ' + POOL_D.window + ')</h3><img src="' + thumbs.pools + '" alt="Pools"><div class="legend-bar-pool"></div><div class="legend-labels"><span>Drier (' + fmtNum(st.pools.colorMin, 3) + ')</span><span>Wetter (' + fmtNum(st.pools.colorMax, 3) + ')</span></div><p style="font-size:10px;color:#666">Grey outline = no  Landsat MNDWI slope.</p></div>';
+      if (thumbs.pools) h += '<div class="map-container"><h3>Pools (' + POOL_D.shortLabel + ' slope, ' + POOL_D.window + ')</h3><img src="' + thumbs.pools + '" alt="Pools"><div class="legend-bar-pool"></div><div class="legend-labels"><span>Drier (' + fmtNum(st.pools.colorMin, 3) + ')</span><span>Wetter (' + fmtNum(st.pools.colorMax, 3) + ')</span></div><p style="font-size:10px;color:#666">Grey outline = no Landsat MNDWI slope.' + (topPools.length ? ' Numbers mark the ' + topPools.length + ' pools highlighted below (1 = strongest wetting trend).' : '') + '</p></div>';
       if (thumbs.ditches) h += '<div class="map-container"><h3>Ditches (Colored by ' + idx + ' Slope)</h3><img src="' + thumbs.ditches + '" alt="Ditches"><div class="legend-bar"></div><div class="legend-labels"><span>' + w.neg + '</span><span>' + w.pos + '</span></div></div>';
       if (thumbs.units) h += '<div class="map-container"><h3>Marsh Units (Colored by ' + idx + ' Slope)</h3><img src="' + thumbs.units + '" alt="Marsh Units"><div class="legend-bar"></div><div class="legend-labels"><span>' + w.neg + '</span><span>' + w.pos + '</span></div></div>';
       var pc = cards.pools.filter(Boolean);
-      if (pc.length) { h += '<h2>Top ' + pc.length + ' Pool' + (pc.length === 1 ? '' : 's') + ' by ' + POOL_D.shortLabel + ' Slope (' + POOL_D.window + ')</h2><p style="font-size:11px;color:#555">Points are the polygon-mean ' + idx + ' for June-August scenes only, matching the summer-only slope calculation. Solid red line: the  per-pool slope (' + POOL_D.label + ') drawn through the mean of the plotted points, omitted when no per-pool slope exists for the chosen satellite/index. Dashed grey line: least-squares fit to the plotted points. x = years since 1984-01-01; slopes in index units per year; t and n are printed per pool where .</p>';
+      if (pc.length) { h += '<h2>Top ' + pc.length + ' Pool' + (pc.length === 1 ? '' : 's') + ' by ' + POOL_D.shortLabel + ' Slope (' + POOL_D.window + ')</h2>' + topPoolLinks(pc.map(function (c) { return c.f; })) + '<p style="font-size:11px;color:#555">Points are the polygon-mean ' + idx + ' for June-August scenes only, matching the summer-only slope calculation. Solid red line: the  per-pool slope (' + POOL_D.label + ') drawn through the mean of the plotted points, omitted when no per-pool slope exists for the chosen satellite/index. Dashed grey line: least-squares fit to the plotted points. x = years since 1984-01-01; slopes in index units per year; t and n are printed per pool where .</p>';
         pc.forEach(function (c, i) { var p = c.f.properties; var hex = (p.sl === null || p.sl === undefined) ? '#888888' : MM.rampColor(p.sl, POOL_D.palette, st.pools.colorMin, st.pools.colorMax); var b = MM.featureBbox(c.f); var fit = MM.linearFit(MM.xy(c.pts)); var interp = (p.sl === null || p.sl === undefined) ? '' : '(' + (p.sl >= 0 ? 'wetting' : 'drying') + ' trend' + (p.sig === 1 ? '' : ', not significant, |t| &lt; 2') + ')';
           h += '<div style="page-break-inside:avoid;margin-bottom:30px;border:1px solid #ddd;padding:15px;border-radius:5px"><h3 style="color:' + hex + '">' + poolTitle(p) + ' (rank ' + (i + 1) + ')</h3><div style="display:flex;gap:15px;flex-wrap:wrap"><div style="flex:1;min-width:330px">' + pairHtml(c.pair, c.img, hex) + '<p><strong>Location:</strong> ' + ((b[1] + b[3]) / 2).toFixed(5) + ', ' + ((b[0] + b[2]) / 2).toFixed(5) + '</p><p><strong>Pool:</strong> ' + esc(metaLine(p)) + '</p><p><strong>Trend:</strong> ' + esc(statsLine(p)) + ' ' + interp + '</p>' + (fb ? '<p style="font-size:11px;color:#a65a00;font-style:italic">' + esc(fb) + '</p>' : '') + '</div><div style="flex:1;min-width:300px">' + svgTimeSeries(c.pts, (!fb && p.sl !== null && p.sl !== undefined && c.pts.length) ? p.sl : null, 400, 200, idx + ' (Landsat)', { olsSlope: fit.slope, storedLabel: ' ' + POOL_D.shortLabel + ' slope (' + POOL_D.window + ')', olsLabel: 'least-squares fit to plotted summer points', caption: 'summer (Jun-Aug) scenes only' }) + '</div></div></div>'; }); }
       var uc = cards.units.filter(Boolean); var prop = UNIT_SLOPE[idx];

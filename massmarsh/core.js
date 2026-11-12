@@ -648,6 +648,74 @@ window.MM = (function () {
     ctx.save(); ctx.font = 'bold ' + Math.round(fs * 0.92) + 'px Roboto, Arial, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,0.9)';
     fits.forEach(function (f) { var p0 = f.d.data[0], p1 = f.d.data[1]; var x = (xs.getPixelForValue(p0.x) + xs.getPixelForValue(p1.x)) / 2, y = (ys.getPixelForValue(p0.y) + ys.getPixelForValue(p1.y)) / 2 - 6; var t = (f.d._fit.slope >= 0 ? '+' : '') + f.d._fit.slope.toFixed(4) + '/yr'; ctx.strokeText(t, x, y); ctx.fillStyle = f.d.borderColor || '#333'; ctx.fillText(t, x, y); });
     ctx.restore(); } };
+  // ---------- KML writer (downloads of highlighted or uploaded features) ----------
+  function xmlEsc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+  function kmlColor(css, alpha) {                             // '#rrggbb' or 'rgb(r,g,b)' -> KML aabbggrr
+    var m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(css || ''); var r, g, b;
+    if (m) { r = m[1]; g = m[2]; b = m[3]; } else { var q = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(css || ''); if (q) { r = (+q[1]).toString(16); g = (+q[2]).toString(16); b = (+q[3]).toString(16); } else { r = 'ff'; g = '00'; b = '00'; } }
+    function two(x) { return ('0' + x).slice(-2); } return alpha + two(b) + two(g) + two(r);
+  }
+  function toKML(features, o) {                               // o: name, folder, nameOf(f, i), descOf(f, i) (HTML), colorOf(f, i) (css colour)
+    o = o || {}; var styles = {};
+    function coords(ring) { return ring.map(function (c) { return c[0] + ',' + c[1] + ',0'; }).join(' '); }
+    function poly(rings) { return '<Polygon><outerBoundaryIs><LinearRing><coordinates>' + coords(rings[0]) + '</coordinates></LinearRing></outerBoundaryIs>' + rings.slice(1).map(function (r) { return '<innerBoundaryIs><LinearRing><coordinates>' + coords(r) + '</coordinates></LinearRing></innerBoundaryIs>'; }).join('') + '</Polygon>'; }
+    function line(c) { return '<LineString><coordinates>' + coords(c) + '</coordinates></LineString>'; }
+    function point(c) { return '<Point><coordinates>' + coords([c]) + '</coordinates></Point>'; }
+    function geom(g) {
+      if (!g) return ''; var t = g.type, c = g.coordinates;
+      if (t === 'Polygon') return poly(c); if (t === 'MultiPolygon') return '<MultiGeometry>' + c.map(poly).join('') + '</MultiGeometry>';
+      if (t === 'LineString') return line(c); if (t === 'MultiLineString') return '<MultiGeometry>' + c.map(line).join('') + '</MultiGeometry>';
+      if (t === 'Point') return point(c); if (t === 'MultiPoint') return '<MultiGeometry>' + c.map(point).join('') + '</MultiGeometry>';
+      if (t === 'GeometryCollection') return '<MultiGeometry>' + (g.geometries || []).map(geom).join('') + '</MultiGeometry>'; return '';
+    }
+    var marks = features.map(function (f, i) {
+      var css = (o.colorOf && o.colorOf(f, i)) || '#ff0000'; var sid = 's' + kmlColor(css, 'ff');
+      if (!styles[sid]) styles[sid] = '<Style id="' + sid + '"><LineStyle><color>' + kmlColor(css, 'ff') + '</color><width>2</width></LineStyle><PolyStyle><color>' + kmlColor(css, '80') + '</color></PolyStyle><IconStyle><color>' + kmlColor(css, 'ff') + '</color></IconStyle></Style>';
+      return '<Placemark><name>' + xmlEsc(o.nameOf ? o.nameOf(f, i) : 'Feature ' + (i + 1)) + '</name>' + (o.descOf ? '<description><![CDATA[' + o.descOf(f, i) + ']]></description>' : '') + '<styleUrl>#' + sid + '</styleUrl>' + geom(f.geometry) + '</Placemark>';
+    });
+    return '<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>' + xmlEsc(o.name || 'MassMarsh export') + '</name>' + Object.keys(styles).map(function (k) { return styles[k]; }).join('') + '<Folder><name>' + xmlEsc(o.folder || o.name || 'Features') + '</name>' + marks.join('') + '</Folder></Document></kml>';
+  }
+
+  // ---------- histograms (Assessment report panels and the UVVR Viewer) ----------
+  // Histogram binning shared by the panel charts and the downloaded report (user request 2026-10-22): the axis follows the
+  // data (1st-99th percentile for 100+ values, min-max below that), always includes zero, zero is always a bin edge, the bin
+  // width is a round number, bins number 2*sqrt(n) clamped to 6..30, and values beyond the axis are counted in the end bins.
+  function niceStep(x) { if (!(x > 0)) return 0.001; var p = Math.pow(10, Math.floor(Math.log10(x))), r = x / p; return (r <= 1 ? 1 : r <= 2 ? 2 : r <= 2.5 ? 2.5 : r <= 5 ? 5 : 10) * p; }
+  function histBins(slopes) {
+    var v = slopes.filter(function (x) { return x !== null && x !== undefined && isFinite(x); }).sort(function (a, b) { return a - b; }); var n = v.length; if (!n) return null;
+    var pct = n >= 100; var lo = pct ? percentile(v, 0.01) : v[0], hi = pct ? percentile(v, 0.99) : v[n - 1];
+    lo = Math.min(lo, 0); hi = Math.max(hi, 0);
+    if (hi - lo < 0.004) { var c = (lo + hi) / 2; lo = Math.min(0, c - 0.002); hi = Math.max(0, c + 0.002); }
+    var nb = Math.max(6, Math.min(30, Math.round(2 * Math.sqrt(n)))), span = hi - lo;
+    var nNeg = Math.round(nb * (-lo) / span), nPos = nb - nNeg;
+    if (lo < 0 && nNeg === 0) { nNeg = 1; nPos = nb - 1; } if (hi > 0 && nPos === 0) { nPos = 1; nNeg = nb - 1; }
+    var w = +niceStep(Math.max(nNeg ? -lo / nNeg : 0, nPos ? hi / nPos : 0)).toFixed(10); lo = +(-nNeg * w).toFixed(10); hi = +(nPos * w).toFixed(10);   /* rounded: no float noise in labels */
+    var neg = new Array(nb).fill(0), pos = new Array(nb).fill(0), below = 0, above = 0;
+    v.forEach(function (x) { var b = Math.floor((x - lo) / w + 1e-9); if (b < 0) { b = 0; below++; } if (b >= nb) { b = nb - 1; above++; } if (x < 0) neg[b]++; else pos[b]++; });
+    var tick = niceStep(span / 6), ticks = []; for (var t = Math.ceil(lo / tick - 1e-9) * tick; t <= hi + 1e-9; t += tick) ticks.push(+t.toFixed(6));
+    return { neg: neg, pos: pos, centres: neg.map(function (_, i) { return lo + (i + 0.5) * w; }), lo: lo, hi: hi, width: w, n: n, nb: nb, below: below, above: above, pct: pct, ticks: ticks };
+  }
+  function histNote(b) {                                      // one line under the chart: what the axis covers and where the outliers went
+    var out = (b.below + b.above); return (b.pct ? 'Axis spans the 1st to 99th percentile of ' + b.n + ' values' : 'Axis spans all ' + b.n + ' values') + (out ? '; ' + out + ' beyond it ' + (out === 1 ? 'is' : 'are') + ' counted in the end bar' + (out === 1 ? '' : 's') : '') + '. ' + b.nb + ' bins of ' + (+b.width.toFixed(6)) + '.';
+  }
+  function fmtTick(x) { return (+x.toFixed(5)).toString(); }
+  function panelHistogram(container, slopes, title, xLabel, colors, labels, yLabel) {   // labels: [negative, positive] legend texts; no labels hides the legend
+    var b = histBins(slopes); container.innerHTML = ''; if (!b) return;
+    var ds = [{ label: labels ? labels[0] : 'below zero', data: b.centres.map(function (c, i) { return { x: c, y: b.neg[i] }; }), backgroundColor: colors[0] }, { label: labels ? labels[1] : 'above zero', data: b.centres.map(function (c, i) { return { x: c, y: b.pos[i] }; }), backgroundColor: colors[1] }];
+    var wrap = el('div', 'pv-chart-wrap'); wrap.style.height = '190px'; var cv = el('canvas'); wrap.appendChild(cv); container.appendChild(wrap);
+    if (container._chart) container._chart.destroy();
+    container._chart = new Chart(cv, { type: 'bar', data: { datasets: ds }, options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { display: !!labels, position: 'top', align: 'end', labels: { boxWidth: 10, font: { size: 10 } } }, title: { display: true, text: title, font: { size: 11 } }, subtitle: { display: true, text: histNote(b), font: { size: 9, style: 'italic' }, color: '#666', position: 'bottom' } },
+      scales: { x: { type: 'linear', min: b.lo, max: b.hi, stacked: true, title: { display: true, text: xLabel }, ticks: { font: { size: 9 }, callback: function (v) { return fmtTick(v); } }, afterBuildTicks: function (axis) { axis.ticks = b.ticks.map(function (t) { return { value: t }; }); }, offset: false }, y: { stacked: true, beginAtZero: true, title: { display: true, text: yLabel || 'Count' } } }, datasets: { bar: { barPercentage: 0.9, categoryPercentage: 1 } } } });
+    var links = el('div', 'pv-chart-links');                     // the histogram's bins as CSV, the chart as PNG
+    links.appendChild(button('Download CSV', function () {
+      var rows = [['bin_low', 'bin_high', 'bin_centre', 'count_negative_slope', 'count_positive_slope', 'total_count']];
+      b.centres.forEach(function (cc, i) { rows.push([+(b.lo + i * b.width).toFixed(6), +(b.lo + (i + 1) * b.width).toFixed(6), +cc.toFixed(6), b.neg[i], b.pos[i], b.neg[i] + b.pos[i]]); });
+      downloadText(safeName(title, '.csv'), csvText(rows));
+    }, 'small'));
+    links.appendChild(button('Download PNG', function () { downloadChart(wrap, null, title); }, 'small'));
+    container.appendChild(links);
+  }
+
   function drawChart(container, title, datasets, height, legendPos, opt) {
     opt = opt || {}; container.innerHTML = ''; var wrap = el('div', 'pv-chart-wrap'); wrap.style.height = height + 'px'; var cv = el('canvas'); wrap.appendChild(cv); container.appendChild(wrap);
     var prev = container._chart; if (prev) { prev.destroy(); }
@@ -1864,7 +1932,7 @@ window.MM = (function () {
     removeLayer: removeLayer, addToolLayer: addToolLayer, removeToolLayer: removeToolLayer, clearToolLayers: clearToolLayers, clearAllLayers: clearAllLayers,
     armDraw: armDraw, stopDraw: stopDraw, isDrawing: isDrawing, setClickHandler: setClickHandler, addSwitcher: addSwitcher, removeSwitcher: removeSwitcher,
     linearFit: linearFit, xy: xy, fitSeries: fitSeries, percentile: percentile, nearestRank: nearestRank, rampColor: rampColor, hexToRgb: hexToRgb, seasonFilter: seasonFilter, seasonFilterKey: seasonFilterKey, glowLayer: glowLayer, ICONS: ICONS, limitIndexes: limitIndexes, imagerySwipe: imagerySwipe, stopSwipes: stopSwipes, tideStationFor: tideStationFor, tideTable: tideTable, TIDE_STATIONS: TIDE_STATIONS, dayPts: dayPts,
-    trendDataset: trendDataset, scatterDs: scatterDs, drawChart: drawChart, satTitle: satTitle, downloadChartCSV: downloadChartCSV, downloadChartPNG: downloadChart, chartCSV: chartCSV, csvText: csvText, downloadText: downloadText, safeName: safeName, caption: caption, seriesPanel: seriesPanel, legendBlock: legendBlock, mapLegend: mapLegend, mapOpacity: mapOpacity, imageryPair: imageryPair, imageryCatalog: imageryCatalog, openCog: openCog, setBasemap: setBasemap, startMeasure: startMeasure, busy: busy, listservDialog: listservDialog,
+    trendDataset: trendDataset, scatterDs: scatterDs, drawChart: drawChart, satTitle: satTitle, downloadChartCSV: downloadChartCSV, downloadChartPNG: downloadChart, chartCSV: chartCSV, csvText: csvText, downloadText: downloadText, safeName: safeName, caption: caption, seriesPanel: seriesPanel, legendBlock: legendBlock, mapLegend: mapLegend, mapOpacity: mapOpacity, imageryPair: imageryPair, imageryCatalog: imageryCatalog, openCog: openCog, toKML: toKML, niceStep: niceStep, histBins: histBins, histNote: histNote, fmtTick: fmtTick, panelHistogram: panelHistogram, setBasemap: setBasemap, startMeasure: startMeasure, busy: busy, listservDialog: listservDialog,
     cubeReady: cubeReady, cubeAvailable: cubeAvailable, cube: cube, CUBES: CUBES, pkey: pkey, platName: platName, loadBlock: loadBlock, cubeLocate: cubeLocate, cubeLocateUtm: cubeLocateUtm, pixelSeries: pixelSeries, pixelSeriesFromBlock: pixelSeriesFromBlock, meanSeries: meanSeries, pool: pool, gridMask: gridMask, cubePixelsInMask: cubePixelsInMask, selectionMask: selectionMask, bandIndex: bandIndex,
     POOL_DS: POOL_DS, POOL_PROVENANCE: POOL_PROVENANCE, poolDataset: poolDataset, poolSlopeProps: poolSlopeProps, poolSlopeOf: poolSlopeOf, poolStatsLine: poolStatsLine, poolSeriesPts: poolSeriesPts, seriesDir: seriesDir, enableSentinel2: enableSentinel2, loadServerRaster: loadServerRaster, loadSlopeRaster: loadSlopeRaster,
     compareOn: compareOn, compareOff: compareOff,
