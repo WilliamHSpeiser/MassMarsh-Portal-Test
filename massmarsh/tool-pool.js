@@ -9,19 +9,61 @@
   var MAX_MULTI = 8, DEFAULT_RANGE = 0.03;
   var SEASONS = { summer: { key: 'summer', label: 'Summer (Jun-Aug)', scenesWord: 'summer (Jun-Aug) scenes', chartWord: 'summer Jun-Aug scenes', props: { sl: 'sl', t: 't', sig: 'sig', n: 'n', tr: 'tr' } },
                   all: { key: 'all', label: 'Entire year', scenesWord: 'all-season scenes', chartWord: 'all scenes', props: { sl: 'sly', t: 'ty', sig: 'sigy', n: 'ny', tr: 'try' } } };
-  var P = { season: SEASONS.summer, gids: null, scenes: null, colorMin: -DEFAULT_RANGE, colorMax: DEFAULT_RANGE, panel: null, loading: false, reqId: 0, multi: [], multiNext: 1, filter: { start: null, end: null }, last: null };
+  var P = { season: SEASONS.summer, gids: null, scenes: null, colorMin: -DEFAULT_RANGE, colorMax: DEFAULT_RANGE, panel: null, loading: false, reqId: 0, multi: [], multiNext: 1, filter: { start: null, end: null }, last: null, cube: null };
   var ui = {};
   function prop(name) { return MM.poolSlopeProps(S.opts.satellite, P.season.key)[name]; }     // stored slope fields of the active satellite / season
   function s2() { return S.opts.satellite === 'Sentinel-2'; }
   function satLabel() { return s2() ? 'Sentinel-2' : 'Landsat 5-9'; }
   function valueLabel() { return S.opts.index || 'MNDWI'; }                 // chart index: the stored MNDWI series, or NDVI / NDWI read from the pixel cube
-  function slopeOf(p) { var v = p[prop('sl')]; return (v === null || v === undefined) ? null : v; }
+  function cubeActive() { return valueLabel() !== 'MNDWI' && !!(P.cube && P.cube.slopes); }   // map colours follow NDVI / NDWI slopes computed from the pixel cube
+  function palette() { return cubeActive() ? (MM.PALETTES[valueLabel()] || MM.PALETTES.MNDWI) : MM.PALETTES.MNDWI; }
+  function slopeOf(p) { if (cubeActive()) { var c = P.cube.slopes[p.pid]; return (c && c.sl !== null && c.sl !== undefined) ? c.sl : null; } var v = p[prop('sl')]; return (v === null || v === undefined) ? null : v; }
   function clearTool() { MM.clearToolLayers(); MM.stopDraw(); MM.setClickHandler(null); P.loading = false; P.reqId++; P.multi = []; P.multiNext = 1; P.panel = null; }
   function chartSeason() { return P.chartSeason || P.season.key; }      // scenes shown in the mono chart (the panel's selector; defaults to the settings choice)
   function seriesPoints(raw) { var pts = MM.poolSeriesPts(raw, S.opts.satellite, false); var out = MM.seasonFilterKey(pts, chartSeason()); out.referenced = pts.referenced; return out; }
   function poolPts(f) {                                       // chart points of a pool under the chosen index: the stored MNDWI series, or the pixel cube for NDVI / NDWI (on demand)
     if (valueLabel() === 'MNDWI') return MM.loadPoolSeries(f.properties.pid).then(function (raw) { return { raw: raw, pts: seriesPoints(raw) }; });
     return MM.featureSeries(f, false).then(function (res) { var out = MM.seasonFilterKey(res.pts || [], chartSeason()); out.referenced = false; return { raw: null, pts: out }; });
+  }
+
+  // ---------- NDVI / NDWI slopes for every pool in the selection, from the pixel cube (the map colours follow the chosen index) ----------
+  var MAX_POOL_BLOCKS = 300, EPOCH_MS = Date.UTC(1984, 0, 1), DAY_MS = 86400000;
+  function runPool(items, fn, concurrency) { var i = 0; function next() { if (i >= items.length) return Promise.resolve(); var it = items[i++]; return Promise.resolve(fn(it)).then(next); } var runners = []; for (var k = 0; k < Math.min(concurrency, items.length); k++) runners.push(next()); return Promise.all(runners); }
+  function cubeSlopeKey() { return S.opts.satellite + '|' + valueLabel() + '|' + P.season.key + '|' + (P.gids ? P.gids.length + ':' + P.gids[0] + ':' + P.gids[P.gids.length - 1] : ''); }
+  function poolPixels(f) {                                    // cube pixels of a pool, as featureSeries: mask pixels, else the nearest marsh pixel to its centre (within 2 px)
+    var out = [];
+    try { var gm = MM.gridMask(MM.ringsOf(f.geometry), null); var bb = MM.cubePixelsInMask(gm).byBlock; Object.keys(bb).forEach(function (k) { bb[k].forEach(function (q) { out.push({ block: k, row: q.row, col: q.col, nearest: false }); }); }); } catch (e) {}
+    if (!out.length) { var b = MM.featureBbox(f); var loc = MM.cubeLocate((b[0] + b[2]) / 2, (b[1] + b[3]) / 2); out.push({ block: loc.block, row: loc.row, col: loc.col, nearest: true }); }
+    return out;
+  }
+  function computeCubeSlopes(feats, onProgress) {            // {pid: {sl, n}}: least-squares slope of the pool-mean index over the summer (or all) scenes since 1985, 14 scenes minimum
+    var index = valueLabel().toLowerCase(), summer = P.season.key === 'summer', t0 = Date.UTC(1985, 0, 1); var byBlock = {};
+    feats.forEach(function (f) { poolPixels(f).forEach(function (q) { (byBlock[q.block] = byBlock[q.block] || []).push({ pid: f.properties.pid, row: q.row, col: q.col, nearest: q.nearest }); }); });
+    var keys = Object.keys(byBlock); if (keys.length > MAX_POOL_BLOCKS) return Promise.reject(new Error('too many blocks: ' + keys.length));
+    var acc = {}, done = 0;
+    return MM.cubeReady().then(function () { return runPool(keys, function (k) { return MM.loadBlock(k).then(function (hdr) {
+      var bi = hdr.bands.indexOf(index); if (bi < 0) return;
+      var keep = hdr.days.map(function (d) { var ms = EPOCH_MS + d * DAY_MS; if (ms < t0) return false; if (!summer) return true; var mo = new Date(ms).getUTCMonth() + 1; return mo >= 6 && mo <= 8; });
+      byBlock[k].forEach(function (q) {
+        var pi = hdr.lookup[MM.pkey(q.row, q.col)];
+        if (pi === undefined && q.nearest) { var best = 9; for (var i = 0; i < hdr.npix; i++) { var dd = Math.abs(hdr.pixels[i][0] - q.row) + Math.abs(hdr.pixels[i][1] - q.col); if (dd < best) { best = dd; pi = i; } } if (best > 2) pi = undefined; }
+        if (pi === undefined) return; var base = (bi * hdr.npix + pi) * hdr.nsc; var a = acc[q.pid] || (acc[q.pid] = {});
+        for (var sc = 0; sc < hdr.nsc; sc++) { if (!keep[sc]) continue; var v = hdr.data[base + sc]; if (v === hdr.nodata) continue; var d = hdr.days[sc]; var e = a[d] || (a[d] = [0, 0]); e[0] += v / hdr.scale; e[1]++; }
+      });
+    }).catch(function () {}).then(function () { done++; if (onProgress) onProgress(done, keys.length); }); }, 6); }).then(function () {
+      var out = {};
+      Object.keys(acc).forEach(function (pid) { var a = acc[pid]; var pts = Object.keys(a).map(Number).sort(function (x, y) { return x - y; }).map(function (d) { return { x: d / 365.25, y: a[d][0] / a[d][1] }; }); var fit = pts.length >= 14 ? MM.linearFit(pts) : null; out[pid] = { sl: (fit && fit.slope !== null) ? fit.slope : null, n: pts.length }; });
+      return { slopes: out, blocks: keys.length };
+    });
+  }
+  function cubeSlopesReady(feats, total) {                    // before drawing: cached per selection, index and season; a failure leaves the stored MNDWI colours with a note
+    if (valueLabel() === 'MNDWI') return Promise.resolve();
+    var key = cubeSlopeKey(); if (P.cube && P.cube.key === key) return Promise.resolve();
+    P.cube = { key: key, slopes: null, note: '' };
+    setStatus(ui.status, 'Computing ' + valueLabel() + ' slopes for ' + total + ' pools from the pixel cube...', '#888', true);
+    return computeCubeSlopes(feats, function (d, n) { setStatus(ui.status, 'Reading the pixel cube for ' + total + ' pools: block ' + d + ' of ' + n + '...', '#888', true); })
+      .then(function (res) { P.cube.slopes = res.slopes; })
+      .catch(function (e) { P.cube.slopes = null; P.cube.note = /^too many blocks/.test(e.message) ? 'Selection too large to colour pools by ' + valueLabel() + ' (' + e.message.replace('too many blocks: ', '') + ' cube blocks, max ' + MAX_POOL_BLOCKS + '): the map keeps the stored MNDWI colours; click pools for ' + valueLabel() + ' series.' : 'Could not compute ' + valueLabel() + ' slopes (' + e.message + '): the map keeps the stored MNDWI colours.'; });
   }
 
   // ---------- Step 2 / 3 ----------
@@ -46,7 +88,7 @@
     add(el('div', 'pv-p', 'Satellite:')); var satSel = add(MM.select([['Landsat (30m, 1984-Current)', 'Landsat'], ['Sentinel-2 (20m, 2015-Current)', 'Sentinel-2', true]], S.opts.satellite, '280px'));
     MM.enableSentinel2(satSel, function () { return MM.load('pools').then(function (d) { return d.features.some(function (f) { return f.properties.s2sl !== null && f.properties.s2sl !== undefined; }); }); });   // needs stored Sentinel-2 pool slopes
     add(el('div', 'pv-p', 'Index/Band:')); var idxSel = add(MM.select([['Water Index (MNDWI)', 'MNDWI'], ['Water + Veg. Index (NDWI)', 'NDWI'], ['Vegetation Index (NDVI)', 'NDVI']], S.opts.index || 'MNDWI', '280px')); MM.limitIndexes(satSel, idxSel);
-    add(el('div', 'pv-note', 'The map colours pools by their stored MNDWI slope. The chosen index drives the time series and statistics of the pools you click; NDVI and NDWI are read from the pixel cube on demand.'));
+    add(el('div', 'pv-note', 'MNDWI uses the stored per-pool trends. NDVI and NDWI are computed from the pixel cube for every pool in the selection, so the map colours, time series and statistics all follow the chosen index; large areas take a moment.'));
     add(el('div', 'pv-p', 'Season:')); var seaSel = add(MM.select([[SEASONS.summer.label, 'summer'], [SEASONS.all.label, 'all']], P.season.key, '280px'));
     thin();
     var go = add(button(kind === 'mono' ? 'Initiate' : 'Initiate Multi-Analysis', function () { S.opts.satellite = satSel.value; S.opts.index = idxSel.value; P.season = SEASONS[seaSel.value]; P.chartSeason = P.season.key; S.step = 4; if (kind === 'mono') initiateMono(); else initiateMulti(); })); go.style.width = kind === 'mono' ? '120px' : '160px';
@@ -59,22 +101,25 @@
       var pools = r[0]; P.gids = r[1]; P.scenes = r[2];
       var feats = P.gids.map(function (g) { return pools.byPid[g]; }).filter(Boolean); var total = feats.length;
       if (!total) { setStatus(ui.status, 'No pools found in this area.', '#c00'); return; }
+      return cubeSlopesReady(feats, total).then(function () { drawPools(feats, total, onClick); });
+    }).catch(function (e) { setStatus(ui.status, 'Error loading pools: ' + e.message, '#c00'); });
+  }
+  function drawPools(feats, total, onClick) {
       var withSlope = feats.filter(function (f) { return slopeOf(f.properties) !== null; }); var slopes = withSlope.map(function (f) { return slopeOf(f.properties); });
       var m = Math.max(Math.abs(MM.percentile(slopes, 0.02)), Math.abs(MM.percentile(slopes, 0.98))); if (!isFinite(m) || m === 0) m = DEFAULT_RANGE; P.colorMin = -m; P.colorMax = m;
       MM.removeToolLayer('grey'); MM.removeToolLayer('coloured');
       var grey = feats.filter(function (f) { return slopeOf(f.properties) === null; });
       if (grey.length) MM.addToolLayer('grey', L.geoJSON({ type: 'FeatureCollection', features: grey }, { renderer: MM.canvas, style: { color: '#888888', weight: 1, fill: true, fillOpacity: 0 }, onEachFeature: function (f, lyr) { lyr.on('click', function (e) { L.DomEvent.stop(e); onClick(f, e.latlng); }); } }));
-      if (withSlope.length) MM.addToolLayer('coloured', L.geoJSON({ type: 'FeatureCollection', features: withSlope }, { renderer: MM.canvas, style: function (f) { return { color: '#000000', weight: 1, fillColor: MM.rampColor(slopeOf(f.properties), MM.PALETTES.MNDWI, P.colorMin, P.colorMax), fillOpacity: 1 }; }, onEachFeature: function (f, lyr) { lyr.on('click', function (e) { L.DomEvent.stop(e); onClick(f, e.latlng); }); } }));
-      setStatus(ui.status, total + ' pools loaded', 'green'); ui.prompt.style.display = '';
-      if (withSlope.length) MM.legendBlock(ui.legend, MM.PALETTES.MNDWI, P.colorMin, P.colorMax, ['Drier', 'Wetter']); else ui.legend.innerHTML = '';
-    }).catch(function (e) { setStatus(ui.status, 'Error loading pools: ' + e.message, '#c00'); });
+      if (withSlope.length) MM.addToolLayer('coloured', L.geoJSON({ type: 'FeatureCollection', features: withSlope }, { renderer: MM.canvas, style: function (f) { return { color: '#000000', weight: 1, fillColor: MM.rampColor(slopeOf(f.properties), palette(), P.colorMin, P.colorMax), fillOpacity: 1 }; }, onEachFeature: function (f, lyr) { lyr.on('click', function (e) { L.DomEvent.stop(e); onClick(f, e.latlng); }); } }));
+      setStatus(ui.status, total + ' pools loaded' + (cubeActive() ? ' | ' + withSlope.length + ' coloured by ' + valueLabel() + ' slope from the pixel cube' + (grey.length ? ' (' + grey.length + ' with fewer than 14 scenes)' : '') : ''), 'green'); if (ui.note) ui.note.textContent = (P.cube && valueLabel() !== 'MNDWI' && P.cube.note) || ''; ui.prompt.style.display = '';
+      if (withSlope.length) MM.legendBlock(ui.legend, palette(), P.colorMin, P.colorMax, (cubeActive() && valueLabel() === 'NDVI') ? ['Sparser', 'Denser'] : ['Drier', 'Wetter'], cubeActive() ? 'Legend (' + valueLabel() + ' slope/year)' : undefined); else ui.legend.innerHTML = '';
   }
   function setOpacity(v) { ['grey', 'coloured'].forEach(function (k) { var l = MM.layers.tool[k]; if (l) l.setStyle({ opacity: v, fillOpacity: k === 'coloured' ? v : 0 }); }); }
   function header(modeLabel) {
     ui = {}; MM.clearSide(); MM.titlePanel('Pool Viewer'); MM.addSwitcher('pool_viewer');
-    add(el('div', 'pv-h', modeLabel)); add(el('div', 'pv-small', 'Satellite: ' + S.opts.satellite + ' | Index: ' + valueLabel() + ' | Season: ' + P.season.label + (valueLabel() === 'MNDWI' ? '' : ' | Map colours: stored MNDWI slope')));
+    add(el('div', 'pv-h', modeLabel)); add(el('div', 'pv-small', 'Satellite: ' + S.opts.satellite + ' | Index: ' + valueLabel() + ' | Season: ' + P.season.label + (valueLabel() === 'MNDWI' ? '' : ' | Pool colours: ' + valueLabel() + ' slope from the pixel cube')));
     thin('navy'); MM.mapOpacity([{ onInput: setOpacity }], 'Layer Transparency');
-    ui.status = add(el('div')); setStatus(ui.status, 'Loading pools...', '#888', true);
+    ui.status = add(el('div')); setStatus(ui.status, 'Loading pools...', '#888', true); ui.note = add(el('div', 'pv-warn'));
   }
   function scenesCaption() { var sk = chartSeason(), k = sk + (s2() ? '_s2' : ''); return (s2() ? 'Sentinel-2A/B/C (2015-present' : 'Landsat 5-9 (1985-present') + (sk === 'summer' ? ', Jun-Aug' : '') + ') | ' + (P.scenes && P.scenes[k] ? P.scenes[k] : '?') + ' images'; }
   function poolName(p) { return 'Pool ' + p.st + '-' + p.pid; }

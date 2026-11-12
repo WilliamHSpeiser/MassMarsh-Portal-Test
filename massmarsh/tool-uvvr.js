@@ -111,10 +111,12 @@
     if (!ui.hist) return; ui.hist.innerHTML = ''; if (!values.length) return;
     var pct = values.map(function (v) { return v * 100; }); var slope = U.stat === 'slope'; var one = unitWord === 'pixels' ? 'pixel' : 'marsh unit';
     ui.hist.appendChild(el('div', 'pv-h', STAT_LABEL[U.stat] + ' distribution (' + U.start + '-' + U.end + ', ' + values.length + ' ' + unitWord + (unitWord === 'pixels' ? ' in the study area' : '') + '):'));
+    var labels = null;
     if (slope) { var neg = 0, pos = 0; values.forEach(function (v) { if (v < 0) neg++; else if (v > 0) pos++; }); var zero = values.length - neg - pos; var f = function (k) { return (k / values.length * 100).toFixed(1) + '%'; };
-      var line = el('div', 'pv-small', f(neg) + ' of the ' + unitWord + ' lost vegetation (slope < 0) and ' + f(pos) + ' gained (slope > 0)' + (zero ? '; ' + f(zero) + ' no change' : '') + '.'); line.style.fontWeight = 'bold'; ui.hist.appendChild(line); }
+      var line = el('div', 'pv-small', f(neg) + ' of the ' + unitWord + ' lost vegetation (slope < 0) and ' + f(pos) + ' gained (slope > 0)' + (zero ? '; ' + f(zero) + ' no change' : '') + '.'); line.style.fontWeight = 'bold'; ui.hist.appendChild(line);
+      labels = ['Losing vegetation (slope < 0), ' + f(neg), 'Gaining vegetation (slope > 0), ' + f(pos)]; }   // the shares sit in the legend too, so the PNG carries them
     var box = el('div'); ui.hist.appendChild(box);
-    MM.panelHistogram(box, pct, '% Vegetated ' + STAT_LABEL[U.stat] + ' per ' + one + ' (' + U.start + '-' + U.end + ')', slope ? 'Slope (% vegetated per year)' : STAT_LABEL[U.stat] + ' (% vegetated)', [PALETTE[1], PALETTE[5]], slope ? ['Losing vegetation (slope < 0)', 'Gaining vegetation (slope > 0)'] : null, unitWord === 'pixels' ? 'Pixels' : 'Marsh units');
+    MM.panelHistogram(box, pct, '% Vegetated ' + STAT_LABEL[U.stat] + ' per ' + one + ' (' + U.start + '-' + U.end + ')', slope ? 'Slope (% vegetated per year)' : STAT_LABEL[U.stat] + ' (% vegetated)', [PALETTE[1], PALETTE[5]], labels, unitWord === 'pixels' ? 'Pixels' : 'Marsh units');
   }
   function showAnalyzeResults() {
     ui = {}; clearAnalysis(); MM.clearSide(); MM.titlePanel('UVVR Viewer - Analyze');
