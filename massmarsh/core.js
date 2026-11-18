@@ -378,11 +378,12 @@ window.MM = (function () {
   // ---------- tool switcher (top-right, as in the GEE app) ----------
   var switcherCtl = null;
   var SWITCHER = [['Switch Tool...', null], ['Vegetated Fraction Viewer', 'uvvr_viewer'], ['LiDAR Viewer', 'lidar_viewer'], ['Pool Viewer', 'pool_viewer'], ['Ditch Viewer', 'ditch_viewer'], ['Raster Inspector', 'raster_inspector'], ['Raster Creator', 'raster_creator'], ['Historical Imagery Viewer', 'historical_imagery']];
+  function experimentalTools() { return toolOrder.filter(function (id) { return tools[id] && tools[id].group === 'experimental'; }); }
   function addSwitcher(current) {
     removeSwitcher(); if (S.only) return;
     var C = L.Control.extend({ onAdd: function () {
       var sel = L.DomUtil.create('select', 'pv-tool-switch');
-      SWITCHER.forEach(function (o) { var op = document.createElement('option'); op.textContent = o[0]; op.value = o[1] || ''; var t = o[1] && tools[o[1]]; op.disabled = !!o[1] && (!t || !t.switchIn); sel.appendChild(op); });
+      SWITCHER.concat(experimentalTools().map(function (id) { return [tools[id].label + ' (experimental)', id]; })).forEach(function (o) { var op = document.createElement('option'); op.textContent = o[0]; op.value = o[1] || ''; var t = o[1] && tools[o[1]]; op.disabled = !!o[1] && (!t || !t.switchIn); sel.appendChild(op); });
       sel.value = '';
       sel.addEventListener('change', function () { var v = sel.value; if (!v || v === current) { sel.value = ''; return; } switchTo(v); });
       L.DomEvent.disableClickPropagation(sel); L.DomEvent.disableScrollPropagation(sel); return sel; } });
@@ -422,6 +423,8 @@ window.MM = (function () {
     add(el('div', 'pv-divider')).style.margin = '20px 0 15px 0';
     labelWithInfo('External Products', 'Access external data products and specialized analyses:\n\n• UVVR Viewer – Vegetated Fraction (%) measures the percentage of vegetated marsh surface. From Ganju et al., 2022.\n\n• LiDAR Viewer – Analyze LiDAR elevation data with transect profiling tools.\n\n• Historical Imagery Viewer – Compare historical aerial imagery from 1938 to present with opacity slider.');
     ['uvvr_viewer', 'lidar_viewer', 'historical_imagery'].forEach(toolButton);
+    var extra = experimentalTools();                       // tools registered by the experimental page only (massmarshviewer.com/experimental)
+    if (extra.length) { add(el('div', 'pv-divider')).style.margin = '20px 0 15px 0'; labelWithInfo('Experimental Tools', 'Tools under development, offered on the experimental page only:\n\n\u2022 Planet Viewer \u2013 PlanetScope 3 m scenes over two marsh complexes, pixel-wise NDVI / NDWI trends and per-pixel time series.'); extra.forEach(toolButton); }
     thin('light').style.margin = '30px 0 10px 0';
     add(el('div', 'pv-small', 'For comments or questions, please contact:'));
     var a = el('a', '', 'William Speiser (wspeiser@umass.edu)'); a.href = 'mailto:wspeiser@umass.edu'; a.style.cssText = 'font-size:11px;color:#14558f;display:block;margin:0 0 10px 0'; add(a);
