@@ -501,9 +501,11 @@ window.MM = (function () {
       } else if (m === 'Aggregated Units') {
         instr.appendChild(el('div', 'pv-h lg', 'Click on an aggregated marsh complex to select it.'));
         instr.appendChild(el('div', 'pv-small', 'Aggregated units combine nearby marsh polygons into larger complexes for regional analysis.'));
+        if (opt.note) instr.appendChild(el('div', 'pv-note', opt.note));
         updateStatus(); showBase('complexes');
       } else {
         instr.appendChild(el('div', 'pv-h lg', 'Draw a custom shape to define your assessment area.'));
+        if (opt.note) instr.appendChild(el('div', 'pv-note', opt.note));
         var li2 = el('div', 'pv-small'); li2.style.whiteSpace = 'pre-wrap'; li2.textContent = '• A polygon is armed when you enter Draw mode (and after Clear): click vertices on the map, double-click to finish\n• "Box Select" draws a rectangle instead; click the highlighted button to cancel; "Clear" removes the shape\n• Your area will include the portions of marsh units within your shape'; instr.appendChild(li2);
         drawTools.appendChild(el('div', 'pv-h', 'Drawing Tools:'));
         var r2 = el('div', 'pv-row'); var bb = button('Box Select', function () { if (draw && draw.btn === bb) { stopDraw(); updateStatus(); return; } armDraw('rectangle', bb, function (b) { finishDraw([[[b.getWest(), b.getSouth()], [b.getEast(), b.getSouth()], [b.getEast(), b.getNorth()], [b.getWest(), b.getNorth()], [b.getWest(), b.getSouth()]]]); }); setStatus(status, 'Draw a box to define your area...', '#DAA520', true); }, 'small');
@@ -529,9 +531,12 @@ window.MM = (function () {
         if (S.step !== 1 || sel1.method !== (kind === 'units' ? 'Marsh Units' : kind === 'bboxes' ? 'Bounding Boxes' : 'Aggregated Units')) return;
         removeLayer('base'); updateStatus();
         var fill = kind === 'bboxes' ? 0.06 : 0.125;
+        var only = typeof opt.complexIds === 'function' ? opt.complexIds() : opt.complexIds;   // a tool with data for some complexes only
+        if (only) d = { type: 'FeatureCollection', features: (d.features || []).filter(function (f) { var id = kind === 'units' ? f.properties.cx : f.properties.id; return only.indexOf(id) >= 0; }) };
         layers.base = L.geoJSON(d, { renderer: canvas, style: { color: 'cyan', weight: 1, fillColor: '#00FFFF', fillOpacity: fill }, interactive: kind !== 'bboxes',
           onEachFeature: function (f, lyr) { if (kind !== 'bboxes') lyr.on('click', function (e) { L.DomEvent.stop(e); if (staleDraw()) stopDraw(); if (draw) return; if (kind === 'units') toggleUnit(f); else selectComplex(f, e.latlng); }); } }).addTo(map);
         layers.base._mmFill = fill; if (S.hideUnits) applyOutlineVisibility();
+        if (only && opt.fitFiltered && d.features.length) map.fitBounds(layers.base.getBounds().pad(0.1), { maxZoom: 12 });
         if (kind === 'bboxes') setClickHandler(function (e) { bboxClick(e, d); });
       }).catch(function (e) { setStatus(status, 'Error loading selection layer: ' + e.message, '#c00'); });
     }

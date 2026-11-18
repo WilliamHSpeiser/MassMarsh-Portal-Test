@@ -15,7 +15,9 @@
   var PAL_TREND = ['#b2182b', '#ef8a62', '#fddbc7', '#f7f7f7', '#d1e5f0', '#67a9cf', '#2166ac'];
   var LAYERS = [['Picture (true colour)', 'tc'], ['Picture (false colour, near infrared)', 'fc'], ['NDVI (vegetation index)', 'ndvi'], ['NDWI (water index)', 'ndwi'], ['Nothing', 'none']];
   var SEASON_LABEL = { all: 'All dates', growing: 'Growing season (Jun to Sep)', dormant: 'Dormant season (Oct to Apr)' };
-  var SEL = { defaultMethod: 'Aggregated Units', methods: ['Aggregated Units', 'Draw'] };
+  var SEL = { defaultMethod: 'Aggregated Units', methods: ['Aggregated Units', 'Draw'], fitFiltered: true,
+              complexIds: function () { return P.index ? P.index.sites.map(function (s) { return s.complex; }) : null; },   // outlines only where imagery exists
+              note: 'Outlines are drawn only for the marsh complexes with PlanetScope imagery.' };
   var IDX_NODATA = -32768, SLOPE_NODATA = -9999;
   var P = { index: null, site: null, dateIdx: 0, layer: 'tc', opacity: 1, trend: { on: false, index: 'ndvi', season: 'all', sig: false, opacity: 1 }, clip: true, key: null, cogs: {}, packs: {}, req: 0, trendReq: 0, seriesReq: 0 };
   var ui = {};
@@ -234,5 +236,6 @@
     });
   }
 
+  loadIndex().catch(function () {});                           // know the sites before the first area selection
   MM.registerTool({ id: 'planet_viewer', label: 'Planet Viewer', title: 'Planet Viewer', group: 'experimental', beta: true, selection: SEL, start: start, switchIn: start, clear: clearTool });
 })(window.MM);
