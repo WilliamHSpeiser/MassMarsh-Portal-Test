@@ -19,7 +19,7 @@
               complexIds: function () { return P.index ? P.index.sites.map(function (s) { return s.complex; }) : null; },   // outlines only where imagery exists
               note: 'Outlines are drawn only for the marsh complexes with PlanetScope imagery.' };
   var IDX_NODATA = -32768, SLOPE_NODATA = -9999;
-  var P = { index: null, site: null, dateIdx: 0, layer: 'tc', opacity: 1, trend: { on: false, index: 'ndvi', season: 'all', opacity: 1 }, clip: true, key: null, cogs: {}, packs: {}, req: 0, trendReq: 0, seriesReq: 0 };
+  var P = { index: null, site: null, dateIdx: 0, layer: 'tc', opacity: 1, trend: { on: false, index: 'ndvi', season: 'all', opacity: 1 }, clip: true, key: null, cogs: {}, packs: {}, req: 0, trendReq: 0, seriesReq: 0, series: null };
   var ui = {};
 
   function base() { return BASE || (BASE = window.MM_PLANET_BASE || MM.serverUrl('planet/')); }
@@ -90,12 +90,12 @@
     [ui.trendOn, ui.trendIndex, ui.trendSeason, ui.clip].forEach(function (c) {
       c.addEventListener('change', function () {
         P.trend.on = ui.trendOn.checked; P.trend.index = ui.trendIndex.value; P.clip = ui.clip.checked;
-        if (c === ui.trendIndex) rebuildSeasons(); P.trend.season = ui.trendSeason.value;
+        if (c === ui.trendIndex) { rebuildSeasons(); if (P.series) showSeries(P.series.pts, P.series.lon, P.series.lat); } P.trend.season = ui.trendSeason.value;
         refreshTrend(); if (c === ui.clip) refreshDateLayer();
       });
     });
     thin(); add(el('div', 'pv-h lg', 'Time series:'));
-    ui.prompt = add(el('div', 'pv-grey', 'Click on the map to see the NDVI and NDWI of that pixel on every date.'));
+    ui.prompt = add(el('div', 'pv-grey', 'Click on the map to see that pixel\'s values of the index chosen above on every date, with a fitted line.'));
     ui.chart = add(el('div')); ui.info = add(el('div'));
     credit(); MM.backButton(function () { MM.showLanding(); });
     MM.setClickHandler(mapClick);
@@ -212,27 +212,32 @@
   function mapClick(e) {
     var site = P.site; if (!site) return; var b = site.bbox, lon = e.latlng.lng, lat = e.latlng.lat;
     if (lon < b[0] || lon > b[2] || lat < b[1] || lat > b[3]) { setStatus(ui.prompt, 'Click inside the PlanetScope footprint of ' + site.label + '.', '#c00'); return; }
-    setStatus(ui.prompt, 'Click on the map to see the NDVI and NDWI of that pixel on every date.', '#666');
+    setStatus(ui.prompt, 'Click on the map to see that pixel\'s values of the index chosen above on every date, with a fitted line.', '#666');
     MM.addToolLayer('marker', L.circle(e.latlng, { radius: 6, color: '#FF0000', fillColor: '#FF0000', fillOpacity: 0.3 }));
     ui.chart.innerHTML = ''; ui.info.innerHTML = ''; ui.chart.appendChild(el('div', 'pv-grey', 'Reading ' + site.dates.length + ' dates...'));
     var req = ++P.seriesReq, g0 = site.grid, col = Math.floor((lon - b[0]) / g0.res_lon), row = Math.floor((b[3] - lat) / g0.res_lat);
     var win = { left: col, top: row, right: col + 1, bottom: row + 1, width: 1, height: 1, resampleMethod: 'nearest' }; var pts = [];
     MM.pool(site.dates.filter(function (d) { return d.idx; }), function (d) {
       return openCog(d.idx).then(function (g) { return g.getValues(win); }).then(function (v) { var a = v[0][0][0], w = v[1][0][0]; if (a !== null && a !== undefined && a !== IDX_NODATA) pts.push({ date: d.date, ndvi: a / 10000, ndwi: w / 10000 }); }).catch(function () {});
-    }, 6).then(function () { if (req !== P.seriesReq) return; pts.sort(function (p, q) { return p.date < q.date ? -1 : 1; }); showSeries(pts, lon, lat); });
+    }, 6).then(function () { if (req !== P.seriesReq) return; pts.sort(function (p, q) { return p.date < q.date ? -1 : 1; }); P.series = { pts: pts, lon: lon, lat: lat }; showSeries(pts, lon, lat); });
   }
   function showSeries(pts, lon, lat) {
     ui.chart.innerHTML = ''; ui.info.innerHTML = '';
     if (!pts.length) { ui.chart.appendChild(el('div', 'pv-err', 'No clear observation of this pixel on any date.')); return; }
+    var k = P.trend.index, name = k.toUpperCase(), colour = k === 'ndvi' ? '#2e7d32' : '#1565c0';
     var ms = function (d) { return new Date(d + 'T12:00:00Z').getTime(); };
-    var ds = [{ type: 'line', label: 'NDVI', data: pts.map(function (p) { return { x: ms(p.date), y: p.ndvi }; }), borderColor: '#2e7d32', backgroundColor: '#2e7d32', borderWidth: 2, pointRadius: 4, tension: 0 },
-              { type: 'line', label: 'NDWI', data: pts.map(function (p) { return { x: ms(p.date), y: p.ndwi }; }), borderColor: '#1565c0', backgroundColor: '#1565c0', borderWidth: 2, pointRadius: 4, tension: 0 }];
-    MM.drawChart(ui.chart, 'PlanetScope at ' + lat.toFixed(5) + ', ' + lon.toFixed(5), ds, 280, 'bottom', { yTitle: 'Index value', decimals: 3, yRange: [-1, 1] });
-    ui.info.appendChild(el('div', 'pv-h', 'Pixel statistics (' + pts.length + ' dates):'));
-    ['ndvi', 'ndwi'].forEach(function (k) {
-      var fit = MM.linearFit(pts.map(function (p) { return { x: yearOf(p.date), y: p[k] }; })); var vals = pts.map(function (p) { return p[k]; }); var mean = vals.reduce(function (a, v) { return a + v; }, 0) / vals.length;
-      ui.info.appendChild(el('div', 'pv-small', k.toUpperCase() + ': mean ' + mean.toFixed(3) + ', trend ' + (fit.slope === null || fit.slope === undefined ? 'n/a' : (fit.slope >= 0 ? '+' : '') + fit.slope.toFixed(4) + ' per year (R² ' + (fit.r2 || 0).toFixed(2) + ')')));
-    });
+    var ds = [{ type: 'line', label: name, data: pts.map(function (p) { return { x: ms(p.date), y: p[k] }; }), borderColor: colour, backgroundColor: colour, borderWidth: 2, pointRadius: 4, tension: 0 }];
+    var fit = MM.linearFit(pts.map(function (p) { return { x: yearOf(p.date), y: p[k] }; }));
+    if (fit.slope !== null && fit.slope !== undefined && pts.length > 1) {
+      var a = pts[0], b = pts[pts.length - 1];
+      ds.push({ type: 'line', label: 'Best fit (R\u00b2 = ' + (fit.r2 || 0).toFixed(2) + ')', data: [{ x: ms(a.date), y: fit.slope * yearOf(a.date) + fit.intercept }, { x: ms(b.date), y: fit.slope * yearOf(b.date) + fit.intercept }], borderColor: 'rgba(204,0,0,0.75)', borderWidth: 2, borderDash: [6, 4], pointRadius: 0, fill: false });
+    }
+    MM.drawChart(ui.chart, name + ' at ' + lat.toFixed(5) + ', ' + lon.toFixed(5), ds, 280, 'bottom', { yTitle: name, decimals: 3, yRange: null });
+    var vals = pts.map(function (p) { return p[k]; }); var mean = vals.reduce(function (x, v) { return x + v; }, 0) / vals.length;
+    ui.info.appendChild(el('div', 'pv-h', name + ' at this pixel (' + pts.length + ' dates):'));
+    ui.info.appendChild(el('div', 'pv-small', 'Mean ' + mean.toFixed(3) + ', lowest ' + Math.min.apply(null, vals).toFixed(3) + ', highest ' + Math.max.apply(null, vals).toFixed(3)));
+    ui.info.appendChild(el('div', 'pv-small', 'Best-fit trend: ' + (fit.slope === null || fit.slope === undefined ? 'n/a' : (fit.slope >= 0 ? '+' : '') + fit.slope.toFixed(4) + ' per year, R\u00b2 ' + (fit.r2 || 0).toFixed(2))));
+    ui.info.appendChild(el('div', 'pv-note', 'Switch the index above (NDVI or NDWI) to see the other series for the same pixel.'));
   }
 
   loadIndex().catch(function () {});                           // know the sites before the first area selection
