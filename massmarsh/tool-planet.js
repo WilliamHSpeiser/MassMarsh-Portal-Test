@@ -2,8 +2,8 @@
  * Education and Research programme (30-day delay, two clear dates per year per site to start, growing every month).
  * Products are built by ~/massmarsh_update/planet/planet_products.py and served from the MassMarsh servers (planet/):
  *   per-date NDVI / NDWI rasters and pixel-wise trend rasters: derived products, open;
- *   the pictures themselves (true / false colour): tiles encrypted on the server, unlocked here with the team passphrase,
- *   because the licence does not allow serving the imagery itself from a public site.
+ *   the pictures themselves (true / false colour) as packs of PNG tiles read by byte range; plain since 2026-11-18 (William's
+ *   decision: the experimental page is his alone), with the passphrase-locked mode kept for packs built with --encrypt.
  * Panels follow the UVVR Viewer: a date layer, a trend layer, and the per-pixel time series on click.
  */
 (function (MM) {
@@ -129,9 +129,11 @@
     if (kind === 'none') return;
     if (kind === 'tc' || kind === 'fc') {
       if (!d[kind]) { setStatus(ui.status, 'No picture for this date yet.', '#c00'); return; }
-      if (!P.key) { keyPrompt(); return; }
       setStatus(ui.status, 'Loading the picture...', '#666', true);
-      loadPack(d[kind]).then(function (pack) { if (req !== P.req) return; MM.addToolLayer('date', pictureLayer(pack, url(d[kind] + '.bin'), P.key, P.opacity)); setStatus(ui.status, '', '#666'); })
+      loadPack(d[kind]).then(function (pack) {
+        if (req !== P.req) return;
+        if (pack.encrypted && !P.key) { setStatus(ui.status, '', '#666'); keyPrompt(); return; }
+        MM.addToolLayer('date', pictureLayer(pack, url(d[kind] + '.bin'), pack.encrypted ? P.key : null, P.opacity)); setStatus(ui.status, '', '#666'); })
         .catch(function (e) { if (req === P.req) setStatus(ui.status, 'Picture not available: ' + (e.message || e), '#c00'); });
       return;
     }
@@ -150,7 +152,8 @@
   // ---------- pictures: encrypted tiles unlocked with the team passphrase ----------
   function hex(h) { var a = new Uint8Array(h.length / 2); for (var i = 0; i < a.length; i++) a[i] = parseInt(h.substr(2 * i, 2), 16); return a; }
   function unlock(pass) {
-    var c = P.index.crypto; if (!window.crypto || !crypto.subtle) return Promise.reject(new Error('this browser cannot decrypt (needs https)'));
+    var c = P.index.crypto; if (!c) return Promise.reject(new Error('these pictures are not locked'));
+    if (!window.crypto || !crypto.subtle) return Promise.reject(new Error('this browser cannot decrypt (needs https)'));
     return crypto.subtle.importKey('raw', new TextEncoder().encode(pass), 'PBKDF2', false, ['deriveKey'])
       .then(function (k) { return crypto.subtle.deriveKey({ name: 'PBKDF2', salt: hex(c.salt), iterations: c.iterations, hash: 'SHA-256' }, k, { name: 'AES-GCM', length: 256 }, false, ['decrypt']); })
       .then(function (key) { var chk = hex(c.check); return crypto.subtle.decrypt({ name: 'AES-GCM', iv: chk.slice(0, 12) }, key, chk.slice(12)).then(function (pt) {
@@ -173,7 +176,7 @@
       if (!ent) { setTimeout(function () { done(null, tile); }, 0); return tile; }
       fetch(o.bin, { headers: { Range: 'bytes=' + ent[0] + '-' + (ent[0] + ent[1] - 1) } })
         .then(function (r) { if (!r.ok) throw new Error('tile ' + r.status); return r.arrayBuffer().then(function (buf) { return r.status === 206 ? buf : buf.slice(ent[0], ent[0] + ent[1]); }); })
-        .then(function (buf) { return crypto.subtle.decrypt({ name: 'AES-GCM', iv: new Uint8Array(buf, 0, 12) }, o.key, new Uint8Array(buf, 12)); })
+        .then(function (buf) { return o.key ? crypto.subtle.decrypt({ name: 'AES-GCM', iv: new Uint8Array(buf, 0, 12) }, o.key, new Uint8Array(buf, 12)) : buf; })
         .then(function (png) { var u = URL.createObjectURL(new Blob([png], { type: 'image/png' })); tile.onload = function () { URL.revokeObjectURL(u); done(null, tile); }; tile.onerror = function () { URL.revokeObjectURL(u); done(new Error('decode'), tile); }; tile.src = u; })
         .catch(function (e) { done(e, tile); });
       return tile;
