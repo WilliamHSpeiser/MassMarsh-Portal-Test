@@ -14,7 +14,7 @@
   var PAL_NDWI = ['#8c510a', '#d8b365', '#f6e8c3', '#c7eae5', '#5ab4ac', '#01665e'], NDWI_RANGE = [-0.6, 0.6];
   var PAL_TREND = ['#b2182b', '#ef8a62', '#fddbc7', '#f7f7f7', '#d1e5f0', '#67a9cf', '#2166ac'];
   var LAYERS = [['Picture (true colour)', 'tc'], ['Picture (false colour, near infrared)', 'fc'], ['NDVI (vegetation index)', 'ndvi'], ['NDWI (water index)', 'ndwi'], ['Nothing', 'none']];
-  var SEASON_LABEL = { all: 'All dates', growing: 'Growing season (Jun to Sep)', dormant: 'Dormant season (Oct to Apr)' };
+  var SEASON_LABEL = { all: 'All dates', growing: 'Growing season (Jun to Sep)' };   // the dormant-season trend is built but not offered (William, 2026-11-18)
   var SEL = { defaultMethod: 'Aggregated Units', methods: ['Aggregated Units', 'Draw'], fitFiltered: true,
               complexIds: function () { return P.index ? P.index.sites.map(function (s) { return s.complex; }) : null; },   // outlines only where imagery exists
               note: 'Outlines are drawn only for the marsh complexes with PlanetScope imagery.' };
@@ -102,7 +102,7 @@
     setDate(P.dateIdx); refreshTrend();
   }
   function rebuildSeasons() {
-    var opts = Object.keys((P.site.slopes || {})[P.trend.index] || {}); ui.trendSeason.innerHTML = '';
+    var opts = Object.keys((P.site.slopes || {})[P.trend.index] || {}).filter(function (k) { return SEASON_LABEL[k]; }); ui.trendSeason.innerHTML = '';
     opts.forEach(function (k) { var o = el('option', '', SEASON_LABEL[k] || k); o.value = k; ui.trendSeason.appendChild(o); });
     if (opts.indexOf(P.trend.season) < 0) P.trend.season = opts[0] || 'all'; ui.trendSeason.value = P.trend.season;
   }
