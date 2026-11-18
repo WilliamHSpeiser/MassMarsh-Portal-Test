@@ -14,19 +14,20 @@
   var PAL_NDWI = ['#8c510a', '#d8b365', '#f6e8c3', '#c7eae5', '#5ab4ac', '#01665e'], NDWI_RANGE = [-0.6, 0.6];
   var PAL_TREND = ['#b2182b', '#ef8a62', '#fddbc7', '#f7f7f7', '#d1e5f0', '#67a9cf', '#2166ac'];
   var LAYERS = [['Picture (true colour)', 'tc'], ['Picture (false colour, near infrared)', 'fc'], ['NDVI (vegetation index)', 'ndvi'], ['NDWI (water index)', 'ndwi'], ['Nothing', 'none']];
-  var SEASON_LABEL = { all: 'All dates', growing: 'Growing season (Jun to Sep)' };   // the dormant-season trend is built but not offered (William, 2026-11-18)
+  var SEASON = 'growing', SEASON_LABEL = { growing: 'growing season (Jun to Sep)' }, MONTHS = [6, 7, 8, 9];   // growing-season dates only, in the date list, the series and the trend (William, 2026-11-18: the winter dates stay on the server for later)
+  function inSeason(d) { var m = parseInt(d.date.slice(5, 7), 10); return MONTHS.indexOf(m) >= 0; }
   var SEL = { defaultMethod: 'Aggregated Units', methods: ['Aggregated Units', 'Draw'], fitFiltered: true,
               complexIds: function () { return P.index ? P.index.sites.map(function (s) { return s.complex; }) : null; },   // outlines only where imagery exists
               note: 'Outlines are drawn only for the marsh complexes with PlanetScope imagery.' };
   var IDX_NODATA = -32768, SLOPE_NODATA = -9999;
-  var P = { index: null, site: null, dateIdx: 0, layer: 'tc', opacity: 1, trend: { on: false, index: 'ndvi', season: 'all', opacity: 1 }, clip: true, key: null, cogs: {}, packs: {}, req: 0, trendReq: 0, seriesReq: 0, series: null };
+  var P = { index: null, site: null, dateIdx: 0, layer: 'tc', opacity: 1, trend: { on: false, index: 'ndvi', season: SEASON, opacity: 1 }, clip: true, key: null, cogs: {}, packs: {}, req: 0, trendReq: 0, seriesReq: 0, series: null };
   var ui = {};
 
   function base() { return BASE || (BASE = window.MM_PLANET_BASE || MM.serverUrl('planet/')); }
   function url(rel) { return base() + rel; }
   function loadIndex() {                                      // fetched afresh at every tool start: it is small and grows monthly
     return fetch(url('index.json'), { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error('index.json ' + r.status); return r.json(); })
-      .then(function (j) { P.index = j; P.cogs = {}; P.packs = {}; return j; });
+      .then(function (j) { (j.sites || []).forEach(function (s) { s.dates = (s.dates || []).filter(inSeason); }); j.sites = (j.sites || []).filter(function (s) { return s.dates.length; }); P.index = j; P.cogs = {}; P.packs = {}; return j; });
   }
   function openCog(rel) { if (!P.cogs[rel]) P.cogs[rel] = MM.openCog(url(rel)).catch(function (e) { delete P.cogs[rel]; throw e; }); return P.cogs[rel]; }
   function loadPack(rel) {
@@ -56,7 +57,7 @@
   function noSite(idx) {
     header();
     add(el('div', 'pv-h lg', 'No PlanetScope imagery here yet'));
-    add(el('div', 'pv-small', 'PlanetScope scenes (3 m, two clear dates per year since 2020, growing every month) are collected for these marsh complexes so far. Pick one, then click it on the map:'));
+    add(el('div', 'pv-small', 'PlanetScope scenes (3 m, clear growing-season dates since 2020, growing every month) are collected for these marsh complexes so far. Pick one, then click it on the map:'));
     idx.sites.forEach(function (s) {
       var b = add(button(s.label + ' (' + s.dates.length + ' dates)', function () { map.fitBounds([[s.bbox[1], s.bbox[0]], [s.bbox[3], s.bbox[2]]]); MM.showAreaSelection('Planet Viewer', 'planet_viewer', start, SEL); }));
       b.style.width = '260px';
@@ -68,7 +69,7 @@
   function showMain() {
     ui = {}; header(); P.req++; var site = P.site, n = site.dates.length;
     add(el('div', 'pv-h lg', site.label + ', PlanetScope 3 m'));
-    add(el('div', 'pv-small', n + ' clear dates from ' + site.dates[0].date + ' to ' + site.dates[n - 1].date + '. Pick a date and what to show; the transparency sliders sit at the bottom of the map.'));
+    add(el('div', 'pv-small', n + ' clear growing-season dates (June to September) from ' + site.dates[0].date + ' to ' + site.dates[n - 1].date + '. Pick a date and what to show; the transparency sliders sit at the bottom of the map.'));
     thin(); add(el('div', 'pv-h', 'Date:'));
     var row = add(el('div', 'pv-row'));
     row.appendChild(button('← Earlier', function () { setDate(P.dateIdx - 1); }, 'small'));
@@ -80,31 +81,25 @@
     ui.layerSel = add(MM.select(LAYERS, P.layer, '280px')); ui.layerSel.addEventListener('change', function () { P.layer = ui.layerSel.value; refreshDateLayer(); });
     ui.keyBox = add(el('div')); ui.legend = add(el('div')); ui.status = add(el('div'));
     thin(); add(el('div', 'pv-h lg', 'Trend (pixel-wise slope):'));
-    add(el('div', 'pv-small', 'A straight line fitted to each pixel\'s index against time over the dates on file. With few dates it is a first look, not a result.'));
+    add(el('div', 'pv-small', 'A straight line fitted to each pixel\'s index against time over the growing-season dates (June to September) on file. With few dates it is a first look, not a result.'));
     var tr = add(el('div', 'pv-row'));
     var onLab = el('label', 'pv-check'); ui.trendOn = el('input'); ui.trendOn.type = 'checkbox'; ui.trendOn.checked = P.trend.on; onLab.appendChild(ui.trendOn); onLab.appendChild(document.createTextNode(' show the trend of')); tr.appendChild(onLab);
     ui.trendIndex = MM.select([['NDVI (vegetation)', 'ndvi'], ['NDWI (water)', 'ndwi']], P.trend.index, '150px'); tr.appendChild(ui.trendIndex);
-    ui.trendSeason = add(MM.select([], undefined, '230px')); rebuildSeasons();
     var clipLab = add(el('label', 'pv-check')); ui.clip = el('input'); ui.clip.type = 'checkbox'; ui.clip.checked = P.clip; clipLab.appendChild(ui.clip); clipLab.appendChild(document.createTextNode(' clip indices and trends to the marsh outline'));
     ui.trendLegend = add(el('div')); ui.trendInfo = add(el('div'));
-    [ui.trendOn, ui.trendIndex, ui.trendSeason, ui.clip].forEach(function (c) {
+    [ui.trendOn, ui.trendIndex, ui.clip].forEach(function (c) {
       c.addEventListener('change', function () {
         P.trend.on = ui.trendOn.checked; P.trend.index = ui.trendIndex.value; P.clip = ui.clip.checked;
-        if (c === ui.trendIndex) { rebuildSeasons(); if (P.series) showSeries(P.series.pts, P.series.lon, P.series.lat); } P.trend.season = ui.trendSeason.value;
+        if (c === ui.trendIndex && P.series) showSeries(P.series.pts, P.series.lon, P.series.lat);
         refreshTrend(); if (c === ui.clip) refreshDateLayer();
       });
     });
     thin(); add(el('div', 'pv-h lg', 'Time series:'));
-    ui.prompt = add(el('div', 'pv-grey', 'Click on the map to see that pixel\'s values of the index chosen above on every date, with a fitted line.'));
+    ui.prompt = add(el('div', 'pv-grey', 'Click on the map to see that pixel\'s values of the index chosen above on every growing-season date, with a fitted line.'));
     ui.chart = add(el('div')); ui.info = add(el('div'));
     credit(); MM.backButton(function () { MM.showLanding(); });
     MM.setClickHandler(mapClick);
     setDate(P.dateIdx); refreshTrend();
-  }
-  function rebuildSeasons() {
-    var opts = Object.keys((P.site.slopes || {})[P.trend.index] || {}).filter(function (k) { return SEASON_LABEL[k]; }); ui.trendSeason.innerHTML = '';
-    opts.forEach(function (k) { var o = el('option', '', SEASON_LABEL[k] || k); o.value = k; ui.trendSeason.appendChild(o); });
-    if (opts.indexOf(P.trend.season) < 0) P.trend.season = opts[0] || 'all'; ui.trendSeason.value = P.trend.season;
   }
   function refreshOpacity() {
     var rows = [];
@@ -193,7 +188,7 @@
     var req = ++P.trendReq; MM.removeToolLayer('trend'); ui.trendLegend.innerHTML = ''; ui.trendInfo.innerHTML = ''; refreshOpacity();
     if (!P.trend.on) { MM.mapLegend(null); return; }
     var sp = ((P.site.slopes || {})[P.trend.index] || {})[P.trend.season];
-    if (!sp) { ui.trendInfo.appendChild(el('div', 'pv-err', 'No trend raster for this choice yet (fewer than ' + (P.index.min_dates || 4) + ' dates).')); return; }
+    if (!sp) { ui.trendInfo.appendChild(el('div', 'pv-err', 'No growing-season trend for this site yet (fewer than ' + (P.index.min_dates || 4) + ' June to September dates).')); return; }
     var m = sp.range || 0.05, name = P.trend.index.toUpperCase();
     ui.trendInfo.appendChild(el('div', 'pv-grey', 'Loading the trend raster...'));
     openCog(sp.file).then(function (g) {
@@ -201,9 +196,9 @@
       var opts = { georaster: g, opacity: P.trend.opacity, resolution: 256, pixelValuesToColorFn: function (px) { var v = px[0]; if (v === null || v === undefined || v === SLOPE_NODATA || !isFinite(v)) return null; return MM.rampColor(v, PAL_TREND, -m, m); } };
       if (P.clip && S.selection && S.selection.maskGeometry) { opts.mask = S.selection.maskGeometry; opts.mask_strategy = 'outside'; }
       MM.addToolLayer('trend', new GeoRasterLayer(opts));
-      MM.legendBlock(ui.trendLegend, PAL_TREND, -m, m, ['falling', 'rising'], name + ' trend per year (' + (SEASON_LABEL[P.trend.season] || P.trend.season).toLowerCase() + ')');
+      MM.legendBlock(ui.trendLegend, PAL_TREND, -m, m, ['falling', 'rising'], name + ' trend per year, ' + SEASON_LABEL[SEASON]);
       ui.trendInfo.innerHTML = '';
-      ui.trendInfo.appendChild(el('div', 'pv-small', sp.dates.length + ' dates, ' + sp.dates[0] + ' to ' + sp.dates[sp.dates.length - 1] + '. Over the footprint ' + Math.round(100 * (sp.share_negative || 0)) + ' % of pixels fall and ' + Math.round(100 * (sp.share_positive || 0)) + ' % rise' + '.'));
+      ui.trendInfo.appendChild(el('div', 'pv-small', sp.dates.length + ' growing-season dates, ' + sp.dates[0] + ' to ' + sp.dates[sp.dates.length - 1] + '. Over the footprint ' + Math.round(100 * (sp.share_negative || 0)) + ' % of pixels fall and ' + Math.round(100 * (sp.share_positive || 0)) + ' % rise' + '.'));
     }).catch(function (e) { if (req === P.trendReq) { ui.trendInfo.innerHTML = ''; ui.trendInfo.appendChild(el('div', 'pv-err', 'Trend raster not available: ' + (e.message || e))); } });
   }
 

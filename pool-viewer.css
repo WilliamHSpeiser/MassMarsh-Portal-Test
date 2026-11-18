@@ -156,3 +156,10 @@ html, body { height: 100%; margin: 0; }
 .pv-chart-links { display: flex; gap: 8px; justify-content: flex-end; margin: 2px 0 6px 0; }
 .pv-chart-links button, .pv-site-popup .pv-chart-links button { font-size: 11px; padding: 2px 10px; }
 .pv-note.pv-save-hint { font-size: 12px; }
+
+/* chart controls (y-axis mode, custom bounds, reset zoom) under every time-series chart */
+.pv-chart-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 2px 0 6px 0; color: #555; }
+.pv-chart-ctl select { font-size: inherit; padding: 1px 4px; max-width: 170px; }
+.pv-chart-ctl input[type=number] { width: 62px; font-size: inherit; padding: 1px 4px; }
+.pv-chart-ctl-custom { display: inline-flex; align-items: center; gap: 4px; }
+.pv-chart-ctl button { font-size: inherit; padding: 1px 8px; }

@@ -724,6 +724,44 @@ window.MM = (function () {
     container.appendChild(links);
   }
 
+  // y-axis bounds of the time-series charts (Brian, Nov 2026): fixed index range (the default, comparable between charts), fit to the
+  // plotted data, or bounds typed by the user; remembered in this browser. Charts also zoom (drag a box, ctrl + wheel, pinch) and pan
+  // (shift + drag) through chartjs-plugin-zoom; double-click resets. Charts drawn with yRange null always follow their data.
+  var yAxisPref = { mode: 'fixed', min: -1, max: 1 };
+  try { var yp = JSON.parse(localStorage.getItem('mm_chart_y') || 'null'); if (yp && /^(fixed|fit|custom)$/.test(yp.mode)) yAxisPref = yp; } catch (e) {}
+  function saveYAxisPref() { try { localStorage.setItem('mm_chart_y', JSON.stringify(yAxisPref)); } catch (e) {} }
+  function yBounds(fixedRange) {                              // -> { min, max, grace } for the current preference
+    if (!fixedRange || yAxisPref.mode === 'fit') return { min: undefined, max: undefined, grace: '5%' };
+    if (yAxisPref.mode === 'custom' && isFinite(yAxisPref.min) && isFinite(yAxisPref.max) && yAxisPref.max > yAxisPref.min) return { min: yAxisPref.min, max: yAxisPref.max, grace: undefined };
+    return { min: fixedRange[0], max: fixedRange[1], grace: undefined };
+  }
+  var zoomReady = false;
+  function zoomPlugin() { if (!zoomReady && window.ChartZoom && window.Chart && Chart.register) { try { Chart.register(window.ChartZoom); } catch (e) {} zoomReady = true; } return zoomReady; }
+  function chartControls(container, c, fixedRange, fs) {       // the row under a chart: y-axis mode, custom bounds, reset zoom
+    var row = el('div', 'pv-chart-ctl'); row.style.fontSize = Math.round(11 * fs) + 'px';
+    row.appendChild(el('span', '', 'Y axis:'));
+    var modes = [['Fixed (' + (fixedRange ? fixedRange[0] + ' to ' + fixedRange[1] : 'index range') + ')', 'fixed'], ['Fit to data', 'fit'], ['Custom', 'custom']];
+    var sel = select(modes, fixedRange ? yAxisPref.mode : 'fit'); if (!fixedRange) sel.disabled = true; row.appendChild(sel);
+    var mn = el('input'); mn.type = 'number'; mn.step = 'any'; mn.value = yAxisPref.min; mn.title = 'lower bound'; var mx = el('input'); mx.type = 'number'; mx.step = 'any'; mx.value = yAxisPref.max; mx.title = 'upper bound';
+    var custom = el('span', 'pv-chart-ctl-custom'); custom.appendChild(mn); custom.appendChild(el('span', '', 'to')); custom.appendChild(mx); row.appendChild(custom);
+    var reset = button('Reset zoom', function () { if (c.resetZoom) c.resetZoom('none'); apply(); }, 'small'); reset.title = 'Drag a box to zoom, ctrl + wheel to zoom, shift + drag to pan, double-click to reset'; row.appendChild(reset);
+    function dataRange() {                                  // plotted y extent of the visible datasets, padded 5 %
+      var lo = Infinity, hi = -Infinity;
+      c.data.datasets.forEach(function (d, i) { if (c.getDatasetMeta(i).hidden) return; (d.data || []).forEach(function (pt) { var y = pt && typeof pt === 'object' ? pt.y : pt; if (isFinite(y)) { if (y < lo) lo = y; if (y > hi) hi = y; } }); });
+      if (!isFinite(lo)) return fixedRange || [-1, 1]; var pad = ((hi - lo) || 0.1) * 0.05; return [lo - pad, hi + pad];
+    }
+    function apply() {
+      custom.style.display = (fixedRange && yAxisPref.mode === 'custom') ? '' : 'none';
+      if (!fixedRange) return;
+      var b = yBounds(fixedRange); var lo = b.min, hi = b.max; if (lo === undefined) { var r = dataRange(); lo = r[0]; hi = r[1]; }
+      if (c.zoomScale) c.zoomScale('y', { min: lo, max: hi }, 'none'); else { c.options.scales.y.min = lo; c.options.scales.y.max = hi; c.options.scales.y.grace = undefined; c.update(); }
+    }
+    c._mmApply = apply;
+    sel.addEventListener('change', function () { yAxisPref.mode = sel.value; saveYAxisPref(); apply(); });
+    [mn, mx].forEach(function (inp) { inp.addEventListener('change', function () { var a = parseFloat(mn.value), b2 = parseFloat(mx.value); if (isFinite(a) && isFinite(b2) && b2 > a) { yAxisPref.min = a; yAxisPref.max = b2; saveYAxisPref(); apply(); } }); });
+    custom.style.display = (fixedRange && yAxisPref.mode === 'custom') ? '' : 'none';
+    container.appendChild(row);
+  }
   function drawChart(container, title, datasets, height, legendPos, opt) {
     opt = opt || {}; container.innerHTML = ''; var wrap = el('div', 'pv-chart-wrap'); wrap.style.height = height + 'px'; var cv = el('canvas'); wrap.appendChild(cv); container.appendChild(wrap);
     var prev = container._chart; if (prev) { prev.destroy(); }
@@ -731,13 +769,15 @@ window.MM = (function () {
     if (!opt.noExpand) { var ex = el('button', 'pv-chart-expand'); ex.type = 'button'; ex.title = 'Expand chart'; ex.innerHTML = ICONS.expand; ex.addEventListener('click', function () { expandChart(container); }); wrap.appendChild(ex); }
     var fs = opt.fontScale || 1;
     var idx = opt.index || S.opts.index; var lab = LABELS[idx] || ['', '']; var yr = opt.yRange === null ? null : (opt.yRange || (idx === 'VV' || idx === 'VH' ? [-30, 0] : [-1, 1]));   // yRange null: the axis follows the data (transect profiles)
-    var yTitle = opt.yTitle || ('← ' + lab[0] + '  |  ' + idx + '  |  ' + lab[1] + ' →');
+    var yTitle = opt.yTitle || ('← ' + lab[0] + '  |  ' + idx + '  |  ' + lab[1] + ' →'); var yb = yBounds(yr); var hasZoom = zoomPlugin();
+    var zoomOpts = hasZoom ? { pan: { enabled: true, mode: 'xy', modifierKey: 'shift' }, zoom: { wheel: { enabled: true, modifierKey: 'ctrl' }, pinch: { enabled: true }, drag: { enabled: true, backgroundColor: 'rgba(26,115,232,0.15)', borderColor: '#1a73e8', borderWidth: 1 }, mode: 'xy' } } : undefined;
     var c = new Chart(cv, { data: { datasets: datasets }, plugins: [mmSlopeLabels], options: { responsive: true, maintainAspectRatio: false, animation: false,
-      plugins: { title: { display: true, text: title, font: { size: 12 * fs } }, legend: { display: legendPos !== 'none', position: legendPos || 'bottom', labels: { boxWidth: 10 * fs, font: { size: 10 * fs }, filter: function (it) { return !/^_/.test(it.text); } } },
+      plugins: { zoom: zoomOpts, title: { display: true, text: title, font: { size: 12 * fs } }, legend: { display: legendPos !== 'none', position: legendPos || 'bottom', labels: { boxWidth: 10 * fs, font: { size: 10 * fs }, filter: function (it) { return !/^_/.test(it.text); } } },
         tooltip: { callbacks: { label: function (c) { var d = c.raw; return (d.plat !== undefined && d.plat !== null ? platName(d.plat) + ', ' : '') + (opt.xIsYear ? c.parsed.x : fmtDate(c.parsed.x)) + ': ' + c.parsed.y.toFixed(opt.decimals === undefined ? 4 : opt.decimals); } } } },
       scales: { x: opt.xIsYear ? { type: 'linear', title: { display: true, text: opt.xTitle || 'Year', font: { size: 12 * fs } }, grid: { color: '#eee' }, ticks: { font: { size: 11 * fs }, callback: function (v) { return String(v); } } } : { type: 'time', title: { display: true, text: 'Date', font: { size: 12 * fs } }, grid: { color: '#eee' }, time: { unit: 'year' }, ticks: { font: { size: 11 * fs } } },
-        y: { min: yr ? yr[0] : undefined, max: yr ? yr[1] : undefined, grace: yr ? undefined : '5%', title: { display: true, text: yTitle, font: { size: 12 * fs } }, grid: { color: '#eee' }, ticks: { font: { size: 11 * fs } } } } } });
-    container._chart = c; return c;
+        y: { min: yb.min, max: yb.max, grace: yb.grace, title: { display: true, text: yTitle, font: { size: 12 * fs } }, grid: { color: '#eee' }, ticks: { font: { size: 11 * fs } } } } } });
+    if (hasZoom) cv.addEventListener('dblclick', function () { if (c.resetZoom) c.resetZoom('none'); if (c._mmApply) c._mmApply(); else c.update(); });
+    container._chart = c; if (!opt.noControls) chartControls(container, c, yr, fs); return c;
   }
   function caption(container, text, red) { container.appendChild(el('div', 'pv-caption' + (red ? ' red' : ''), text)); }
   // expanded chart: the current chart (with any date-range trends / change point already applied) re-drawn near full-window size
