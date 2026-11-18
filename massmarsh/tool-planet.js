@@ -19,7 +19,7 @@
               complexIds: function () { return P.index ? P.index.sites.map(function (s) { return s.complex; }) : null; },   // outlines only where imagery exists
               note: 'Outlines are drawn only for the marsh complexes with PlanetScope imagery.' };
   var IDX_NODATA = -32768, SLOPE_NODATA = -9999;
-  var P = { index: null, site: null, dateIdx: 0, layer: 'tc', opacity: 1, trend: { on: false, index: 'ndvi', season: 'all', sig: false, opacity: 1 }, clip: true, key: null, cogs: {}, packs: {}, req: 0, trendReq: 0, seriesReq: 0 };
+  var P = { index: null, site: null, dateIdx: 0, layer: 'tc', opacity: 1, trend: { on: false, index: 'ndvi', season: 'all', opacity: 1 }, clip: true, key: null, cogs: {}, packs: {}, req: 0, trendReq: 0, seriesReq: 0 };
   var ui = {};
 
   function base() { return BASE || (BASE = window.MM_PLANET_BASE || MM.serverUrl('planet/')); }
@@ -85,12 +85,11 @@
     var onLab = el('label', 'pv-check'); ui.trendOn = el('input'); ui.trendOn.type = 'checkbox'; ui.trendOn.checked = P.trend.on; onLab.appendChild(ui.trendOn); onLab.appendChild(document.createTextNode(' show the trend of')); tr.appendChild(onLab);
     ui.trendIndex = MM.select([['NDVI (vegetation)', 'ndvi'], ['NDWI (water)', 'ndwi']], P.trend.index, '150px'); tr.appendChild(ui.trendIndex);
     ui.trendSeason = add(MM.select([], undefined, '230px')); rebuildSeasons();
-    var sigLab = add(el('label', 'pv-check')); ui.sig = el('input'); ui.sig.type = 'checkbox'; ui.sig.checked = P.trend.sig; sigLab.appendChild(ui.sig); sigLab.appendChild(document.createTextNode(' only pixels whose trend is at least twice its uncertainty (|t| ≥ 2)'));
     var clipLab = add(el('label', 'pv-check')); ui.clip = el('input'); ui.clip.type = 'checkbox'; ui.clip.checked = P.clip; clipLab.appendChild(ui.clip); clipLab.appendChild(document.createTextNode(' clip indices and trends to the marsh outline'));
     ui.trendLegend = add(el('div')); ui.trendInfo = add(el('div'));
-    [ui.trendOn, ui.trendIndex, ui.trendSeason, ui.sig, ui.clip].forEach(function (c) {
+    [ui.trendOn, ui.trendIndex, ui.trendSeason, ui.clip].forEach(function (c) {
       c.addEventListener('change', function () {
-        P.trend.on = ui.trendOn.checked; P.trend.index = ui.trendIndex.value; P.trend.sig = ui.sig.checked; P.clip = ui.clip.checked;
+        P.trend.on = ui.trendOn.checked; P.trend.index = ui.trendIndex.value; P.clip = ui.clip.checked;
         if (c === ui.trendIndex) rebuildSeasons(); P.trend.season = ui.trendSeason.value;
         refreshTrend(); if (c === ui.clip) refreshDateLayer();
       });
@@ -195,16 +194,16 @@
     if (!P.trend.on) { MM.mapLegend(null); return; }
     var sp = ((P.site.slopes || {})[P.trend.index] || {})[P.trend.season];
     if (!sp) { ui.trendInfo.appendChild(el('div', 'pv-err', 'No trend raster for this choice yet (fewer than ' + (P.index.min_dates || 4) + ' dates).')); return; }
-    var m = sp.range || 0.05, sig = P.trend.sig, name = P.trend.index.toUpperCase();
+    var m = sp.range || 0.05, name = P.trend.index.toUpperCase();
     ui.trendInfo.appendChild(el('div', 'pv-grey', 'Loading the trend raster...'));
     openCog(sp.file).then(function (g) {
       if (req !== P.trendReq) return;
-      var opts = { georaster: g, opacity: P.trend.opacity, resolution: 256, pixelValuesToColorFn: function (px) { var v = px[0]; if (v === null || v === undefined || v === SLOPE_NODATA || !isFinite(v)) return null; if (sig && Math.abs(px[1]) < 2) return null; return MM.rampColor(v, PAL_TREND, -m, m); } };
+      var opts = { georaster: g, opacity: P.trend.opacity, resolution: 256, pixelValuesToColorFn: function (px) { var v = px[0]; if (v === null || v === undefined || v === SLOPE_NODATA || !isFinite(v)) return null; return MM.rampColor(v, PAL_TREND, -m, m); } };
       if (P.clip && S.selection && S.selection.maskGeometry) { opts.mask = S.selection.maskGeometry; opts.mask_strategy = 'outside'; }
       MM.addToolLayer('trend', new GeoRasterLayer(opts));
       MM.legendBlock(ui.trendLegend, PAL_TREND, -m, m, ['falling', 'rising'], name + ' trend per year (' + (SEASON_LABEL[P.trend.season] || P.trend.season).toLowerCase() + ')');
       ui.trendInfo.innerHTML = '';
-      ui.trendInfo.appendChild(el('div', 'pv-small', sp.dates.length + ' dates, ' + sp.dates[0] + ' to ' + sp.dates[sp.dates.length - 1] + '. Over the footprint ' + Math.round(100 * (sp.share_negative || 0)) + ' % of pixels fall and ' + Math.round(100 * (sp.share_positive || 0)) + ' % rise' + (sig ? '; only pixels with a clear trend are drawn' : '') + '.'));
+      ui.trendInfo.appendChild(el('div', 'pv-small', sp.dates.length + ' dates, ' + sp.dates[0] + ' to ' + sp.dates[sp.dates.length - 1] + '. Over the footprint ' + Math.round(100 * (sp.share_negative || 0)) + ' % of pixels fall and ' + Math.round(100 * (sp.share_positive || 0)) + ' % rise' + '.'));
     }).catch(function (e) { if (req === P.trendReq) { ui.trendInfo.innerHTML = ''; ui.trendInfo.appendChild(el('div', 'pv-err', 'Trend raster not available: ' + (e.message || e))); } });
   }
 
