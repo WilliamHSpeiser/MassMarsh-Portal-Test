@@ -728,9 +728,10 @@ window.MM = (function () {
   // y-axis bounds of the time-series charts (Brian, Nov 2026): fixed index range (the default, comparable between charts), fit to the
   // plotted data, or bounds typed by the user; remembered in this browser. Charts also zoom (drag a box, ctrl + wheel, pinch) and pan
   // (shift + drag) through chartjs-plugin-zoom; double-click resets. Charts drawn with yRange null always follow their data.
-  var yAxisPref = { mode: 'fixed', min: -1, max: 1 };
-  try { var yp = JSON.parse(localStorage.getItem('mm_chart_y') || 'null'); if (yp && /^(fixed|fit|custom)$/.test(yp.mode)) yAxisPref = yp; } catch (e) {}
-  function saveYAxisPref() { try { localStorage.setItem('mm_chart_y', JSON.stringify(yAxisPref)); } catch (e) {} }
+  var yAxisPref = { mode: 'fit', min: -1, max: 1 };          // y axis follows the data unless the reader picks Fixed or Custom (kept in localStorage)
+  // a choice saved before 20261119b (no version mark) came from the days when Fixed was the default, so only Fit / Custom are carried over
+  try { var yp = JSON.parse(localStorage.getItem('mm_chart_y') || 'null'); if (yp && /^(fixed|fit|custom)$/.test(yp.mode) && (yp.v === 2 || yp.mode !== 'fixed')) yAxisPref = { mode: yp.mode, min: yp.min, max: yp.max }; } catch (e) {}
+  function saveYAxisPref() { try { localStorage.setItem('mm_chart_y', JSON.stringify({ v: 2, mode: yAxisPref.mode, min: yAxisPref.min, max: yAxisPref.max })); } catch (e) {} }
   function yBounds(fixedRange) {                              // -> { min, max, grace } for the current preference
     if (!fixedRange || yAxisPref.mode === 'fit') return { min: undefined, max: undefined, grace: '5%' };
     if (yAxisPref.mode === 'custom' && isFinite(yAxisPref.min) && isFinite(yAxisPref.max) && yAxisPref.max > yAxisPref.min) return { min: yAxisPref.min, max: yAxisPref.max, grace: undefined };
