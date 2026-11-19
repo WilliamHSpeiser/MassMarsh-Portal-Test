@@ -26,8 +26,9 @@ window.MM = (function () {
 
   var EPOCH_MS = Date.UTC(1984, 0, 1), DAY_MS = 86400000, YEAR_MS = 365.25 * DAY_MS, START_YEAR = 1984;
   var MIN_FIT_OBS = 10;
-  var PALETTES = { MNDWI: ['#FF8C00', '#FFFFFF', '#0000FF'], NDWI: ['#FF8C00', '#FFFFFF', '#0000FF'], NDVI: ['#8B4513', '#FFFFFF', '#008000'], VV: ['#0000FF', '#FFFFFF', '#FF8C00'], VH: ['#0000FF', '#FFFFFF', '#FF8C00'] };
-  var LABELS = { MNDWI: ['Drier', 'Wetter'], NDWI: ['Drier', 'Wetter'], NDVI: ['Sparse', 'Dense'], VV: ['Drier', 'Wetter'], VH: ['Drier', 'Wetter'] };
+  var PALETTES = { MNDWI: ['#FF8C00', '#FFFFFF', '#0000FF'], NDWI: ['#FF8C00', '#FFFFFF', '#0000FF'], NDVI: ['#8B4513', '#FFFFFF', '#008000'], VV: ['#0000FF', '#FFFFFF', '#FF8C00'], VH: ['#0000FF', '#FFFFFF', '#FF8C00'], VEGFRAC: ['#8B4513', '#FFFFFF', '#008000'], UVVR: ['#008000', '#FFFFFF', '#8B4513'] };
+  var LABELS = { MNDWI: ['Drier', 'Wetter'], NDWI: ['Drier', 'Wetter'], NDVI: ['Sparse', 'Dense'], VV: ['Drier', 'Wetter'], VH: ['Drier', 'Wetter'], VEGFRAC: ['Less vegetated', 'More vegetated'], UVVR: ['More vegetated', 'Less vegetated'] };
+  var Y_RANGES = { VV: [-30, 0], VH: [-30, 0], VEGFRAC: [0, 1], UVVR: null };   // fixed chart y-axis range per index (default -1 to 1; null: follow the data)
   var MULTI_COLORS = ['#e41a1c', '#377eb8', '#4daf4a', '#984ea3', '#ff7f00', '#a65628', '#f781bf', '#999999'];
   var SEG_COLORS = ['#1565C0', '#4CAF50', '#FF9800', '#9C27B0', '#00BCD4'];
   var SEG_TREND = ['#0D47A1', '#2E7D32', '#E65100', '#6A1B9A', '#00838F'];
@@ -416,7 +417,7 @@ window.MM = (function () {
     labelWithInfo('Report Generators', 'Compile a report with remote sensing information to summarize observations in a selected area and flag locations possibly requiring attention.\n\n• Marsh Assessment Report – Generate a report that summarizes feature selections and their remote sensing trajectory, or find areas that may warrant concern\n\n• Restoration Efficacy Report – Generate a report that documents the time series at selected locations within a marsh and, if desired, any changes from user-input dates (such as project implementation dates)\n\n• Comprehensive Report – Generate both above reports in the same place, on the same document');
     ['assessment_report', 'restoration_report', 'comprehensive_report'].forEach(toolButton);
     add(el('div', 'pv-divider')).style.margin = '20px 0 15px 0';
-    labelWithInfo('Analysis Tools', 'Explore marsh dynamics with our specialized analysis tools:\n\n• Pool Viewer – Examine and analyze time series trends for individual salt marsh pools\n\n• Ditch Viewer – Examine and analyze time series trends for ditches from Peck et al., 2025\n\n• Raster Viewer – Examine rasters and analyze time series trends for individual and groups of pixels\n\n• Your Data Viewer – Upload, examine, and analyze time series for your own GeoJSON, GeoPackage, KML, or shapefiles\n\n• Comprehensive Viewer – All viewers combined in one toolbox');
+    labelWithInfo('Analysis Tools', 'Explore marsh dynamics with our specialized analysis tools:\n\n• Pool Viewer – Examine and analyze time series trends for individual salt marsh pools\n\n• Ditch Viewer – Examine and analyze time series trends for ditches from Peck et al., 2025\n\n• Raster Viewer – Examine rasters and analyze time series trends for individual and groups of pixels\n\n• Your Data Viewer – Upload, examine, and analyze time series for your own GeoJSON, GeoPackage, KML / KMZ, or shapefiles\n\n• Comprehensive Viewer – All viewers combined in one toolbox');
     ['pool_viewer', 'ditch_viewer', 'raster_viewer', 'data_viewer'].forEach(toolButton);
     var sep = add(el('div')); sep.style.cssText = 'border-top:1px dotted #bbb;margin:18px 0 16px 0';   // the Comprehensive Viewer (all viewers in one) sits apart from the single-feature viewers
     toolButton('comprehensive_viewer');
@@ -768,7 +769,7 @@ window.MM = (function () {
     container._chartArgs = { title: title, datasets: datasets, legendPos: legendPos, opt: opt };   // re-drawn larger by expandChart (same data, trends, change point)
     if (!opt.noExpand) { var ex = el('button', 'pv-chart-expand'); ex.type = 'button'; ex.title = 'Expand chart'; ex.innerHTML = ICONS.expand; ex.addEventListener('click', function () { expandChart(container); }); wrap.appendChild(ex); }
     var fs = opt.fontScale || 1;
-    var idx = opt.index || S.opts.index; var lab = LABELS[idx] || ['', '']; var yr = opt.yRange === null ? null : (opt.yRange || (idx === 'VV' || idx === 'VH' ? [-30, 0] : [-1, 1]));   // yRange null: the axis follows the data (transect profiles)
+    var idx = opt.index || S.opts.index; var lab = LABELS[idx] || ['', '']; var yr = opt.yRange === null ? null : (opt.yRange || (Y_RANGES.hasOwnProperty(idx) ? Y_RANGES[idx] : [-1, 1]));   // yRange null: the axis follows the data (transect profiles)
     var yTitle = opt.yTitle || ('← ' + lab[0] + '  |  ' + idx + '  |  ' + lab[1] + ' →'); var yb = yBounds(yr); var hasZoom = zoomPlugin();
     var zoomOpts = hasZoom ? { pan: { enabled: true, mode: 'xy', modifierKey: 'shift' }, zoom: { wheel: { enabled: true, modifierKey: 'ctrl' }, pinch: { enabled: true }, drag: { enabled: true, backgroundColor: 'rgba(26,115,232,0.15)', borderColor: '#1a73e8', borderWidth: 1 }, mode: 'xy' } } : undefined;
     var c = new Chart(cv, { data: { datasets: datasets }, plugins: [mmSlopeLabels], options: { responsive: true, maintainAspectRatio: false, animation: false,
@@ -880,7 +881,7 @@ window.MM = (function () {
       if (P.tideSel.value !== 'all') { applyTide(); return; }                 // keep an active tide subset across re-runs (season / raw toggles)
       P.tideNote.textContent = ''; drawMain(); P.addTrend.disabled = false; P.calc.disabled = false;
     };
-    function drawMain() { var pts = P.pts; var ds = [scatterDs(pts, opts.pointColor || '#9c27b0', opts.seriesLabel || 'Mean', 3)]; var tr = trendDataset(pts, '#e63946', '_trend', 2); if (tr) ds.push(tr); drawChart(P.chart, opts.titleFn('main'), ds, 280, 'none'); P.chart._pngCaption = opts.captionFn(P); P.chart.appendChild(el('div', 'pv-note pv-save-hint', '(Click icon next to chart title to save as image or csv)')); }
+    function drawMain() { var pts = P.pts; var ds = [scatterDs(pts, opts.pointColor || '#9c27b0', opts.seriesLabel || 'Mean', 3)]; var tr = trendDataset(pts, '#e63946', '_trend', 2); if (tr) ds.push(tr); drawChart(P.chart, opts.titleFn('main'), ds, 280, 'none', opts.chartOpt); P.chart._pngCaption = opts.captionFn(P); P.chart.appendChild(el('div', 'pv-note pv-save-hint', '(Click icon next to chart title to save as image or csv)')); }
     function addBreakpoint() {
       var msg = function (t) { P.trendInfo.appendChild(el('div', 'pv-err', t)); };
       if (!P.pts || !P.pts.length) return msg('No time series data available.');
@@ -903,7 +904,7 @@ window.MM = (function () {
         if (fit.slope !== null) { var sv = el('span', '', fit.slope.toFixed(6) + ' /yr'); sv.style.cssText = 'font-size:11px;color:#333'; row.appendChild(sv); }
         row.appendChild(el('span', 'pv-note', '(' + (i === 0 ? 'Start' : P.breakpoints[i - 1].dateStr) + ' to ' + (i === segs.length - 1 ? 'End' : P.breakpoints[i].dateStr) + ', ' + seg.length + ' obs)')); P.trendInfo.appendChild(row);
       });
-      drawChart(P.chart, opts.titleFn('bp'), ds, 300, 'bottom');
+      drawChart(P.chart, opts.titleFn('bp'), ds, 300, 'bottom', opts.chartOpt);
       caption(P.chart, 'Breakpoint' + (P.breakpoints.length === 1 ? '' : 's') + ': ' + P.breakpoints.map(function (b) { return b.dateStr; }).join(', ') + ' | ' + pts.length + ' total observations', true);
     }
     P.setBreakpoints = function (dates) {                  // e.g. an uploaded feature's date: split the plot there (dates outside the data range are ignored)
@@ -927,7 +928,7 @@ window.MM = (function () {
       var before = pts.filter(function (p) { return p.years < best.years; }), after = pts.filter(function (p) { return p.years >= best.years; });
       var ds = [scatterDs(before, '#1565C0', 'Before Change Point', 4), scatterDs(after, '#4CAF50', 'After Change Point', 4)];
       var t1 = trendDataset(before, '#0D47A1', 'Before Trend', 2), t2 = trendDataset(after, '#2E7D32', 'After Trend', 2); if (t1) ds.push(t1); if (t2) ds.push(t2);
-      drawChart(P.chart, opts.titleFn('cp'), ds, 300, 'bottom');
+      drawChart(P.chart, opts.titleFn('cp'), ds, 300, 'bottom', opts.chartOpt);
       caption(P.chart, 'Change point: ~' + (START_YEAR + best.years).toFixed(0) + ' | ' + n + ' total observations', true);
       P.cpShown = true; P.calc.textContent = 'Clear';
     }
@@ -1704,9 +1705,32 @@ window.MM = (function () {
   // KML / KMZ: every Placemark (in nested Folders / Documents) becomes a feature; name, description, ExtendedData
   // (Data / SimpleData) and TimeStamp / TimeSpan become properties. KML coordinates are longitude / latitude by the standard;
   // the number-range check still runs so a file written with projected numbers gets the coordinate-system row.
+  var KML_NS = { xsi: 'http://www.w3.org/2001/XMLSchema-instance', gx: 'http://www.google.com/kml/ext/2.2', atom: 'http://www.w3.org/2005/Atom', xal: 'urn:oasis:names:tc:ciq:xsdschema:xAL:2.0', kml: 'http://www.opengis.net/kml/2.2' };
+  function kmlParse(text) {                                   // strict XML first; then with the namespace prefixes ArcGIS leaves undeclared (xsi:schemaLocation)
+    text = text.replace(/^\uFEFF/, '');
+    function parse(t) { var d = new DOMParser().parseFromString(t, 'application/xml'); return d.getElementsByTagName('parsererror').length ? null : d; }
+    var doc = parse(text); if (doc) return doc;
+    var fixed = text.replace(/<kml\b([^>]*)>/, function (m, attrs) { var extra = ''; Object.keys(KML_NS).forEach(function (p) { if (new RegExp('[\\s<]' + p + ':').test(text) && !new RegExp('xmlns:' + p + '=').test(attrs)) extra += ' xmlns:' + p + '="' + KML_NS[p] + '"'; }); return '<kml' + attrs + extra + '>'; });
+    return fixed === text ? null : parse(fixed);
+  }
+  // ArcGIS "Layer To KML" and Google Earth exports carry the attribute table as HTML in the description (two-cell rows: field,
+  // value); those rows become properties and the HTML itself is dropped. Other descriptions are kept as plain text.
+  function descriptionProps(props, text) {
+    text = String(text || '').trim(); if (!text) return;
+    if (!/<[a-z!]/i.test(text)) { props.description = text; return; }
+    var d = new DOMParser().parseFromString(text, 'text/html'); var n = 0;
+    Array.prototype.forEach.call(d.querySelectorAll('tr'), function (tr) {
+      var cells = Array.prototype.filter.call(tr.children, function (c) { return /^t[dh]$/i.test(c.tagName); });
+      if (cells.length !== 2 || cells[0].querySelector('table') || cells[1].querySelector('table')) return;
+      var k = cells[0].textContent.trim(), v = cells[1].textContent.trim(); if (!k || k.length > 64 || props.hasOwnProperty(k)) return; if (v === '<Null>') v = '';   // ArcGIS writes <Null> for empty fields
+      var dup = Object.keys(props).some(function (q) { return normKey(q) === normKey(k) && String(props[q]) === v; }); if (dup) return;   // the <name> again
+      props[k] = v; n++;
+    });
+    if (!n) { var plain = (d.body ? d.body.textContent : text).replace(/\s+/g, ' ').trim(); if (plain) props.description = plain; }
+  }
   function kmlToGeoJSON(text) {
-    var doc = new DOMParser().parseFromString(text, 'application/xml');
-    if (doc.getElementsByTagName('parsererror').length) throw new Error('the file is not well-formed KML');
+    var doc = kmlParse(text);
+    if (!doc) throw new Error('the file is not well-formed KML');
     function kids(n, name) { var out = []; for (var ch = n.firstElementChild; ch; ch = ch.nextElementSibling) if (ch.localName === name) out.push(ch); return out; }
     function first(n, name) { var all = n.getElementsByTagNameNS('*', name); return all.length ? all[0] : null; }
     function coords(n) { var ce = first(n, 'coordinates'); if (!ce) return []; return ce.textContent.trim().split(/\s+/).map(function (t) { var q = t.split(',').map(Number); return [q[0], q[1]]; }).filter(function (q) { return isFinite(q[0]) && isFinite(q[1]); }); }
@@ -1727,7 +1751,7 @@ window.MM = (function () {
     Array.prototype.forEach.call(doc.getElementsByTagNameNS('*', 'Placemark'), function (pm) {
       var g = null; for (var ch = pm.firstElementChild; ch && !g; ch = ch.nextElementSibling) g = geom(ch);
       if (!g) return;
-      var props = {}; var nm = kids(pm, 'name')[0]; if (nm) props.name = nm.textContent.trim(); var ds = kids(pm, 'description')[0]; if (ds) props.description = ds.textContent.trim();
+      var props = {}; var nm = kids(pm, 'name')[0]; if (nm) props.name = nm.textContent.trim(); var ds = kids(pm, 'description')[0]; if (ds) descriptionProps(props, ds.textContent);
       var ts = kids(pm, 'TimeStamp')[0]; if (ts) { var w = first(ts, 'when'); if (w) props.timestamp = w.textContent.trim(); }
       var sp = kids(pm, 'TimeSpan')[0]; if (sp) { var b0 = first(sp, 'begin'); if (b0) props.begin = b0.textContent.trim(); var e0 = first(sp, 'end'); if (e0) props.end = e0.textContent.trim(); }
       Array.prototype.forEach.call(pm.getElementsByTagNameNS('*', 'Data'), function (d) { var k = d.getAttribute('name'); var v = first(d, 'value'); if (k && v) props[k] = v.textContent.trim(); });
@@ -1736,25 +1760,29 @@ window.MM = (function () {
     });
     return { type: 'FeatureCollection', features: feats };
   }
-  function unzipFirst(buffer, re) {                          // minimal ZIP reader: the first entry whose name matches (stored or deflated)
+  function unzipEntries(buffer, re) {                        // minimal ZIP reader: every entry whose name matches (stored or deflated) -> Promise of [{ name, data }]
     var dv = new DataView(buffer), u8 = new Uint8Array(buffer), n = u8.length, eocd = -1;
     for (var i = n - 22; i >= Math.max(0, n - 70000); i--) if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
     if (eocd < 0) return Promise.reject(new Error('not a zip file'));
-    var count = dv.getUint16(eocd + 10, true), off = dv.getUint32(eocd + 16, true), td = new TextDecoder();
+    var count = dv.getUint16(eocd + 10, true), off = dv.getUint32(eocd + 16, true), td = new TextDecoder(), jobs = [];
     for (var k = 0; k < count; k++) {
       if (dv.getUint32(off, true) !== 0x02014b50) break;
       var method = dv.getUint16(off + 10, true), csize = dv.getUint32(off + 20, true), nlen = dv.getUint16(off + 28, true), elen = dv.getUint16(off + 30, true), clen = dv.getUint16(off + 32, true), lho = dv.getUint32(off + 42, true);
       var name = td.decode(u8.subarray(off + 46, off + 46 + nlen)); off += 46 + nlen + elen + clen;
       if (!re.test(name)) continue;
       var lnlen = dv.getUint16(lho + 26, true), lelen = dv.getUint16(lho + 28, true), start = lho + 30 + lnlen + lelen, data = u8.subarray(start, start + csize);
-      if (method === 0) return Promise.resolve(data);
-      if (method === 8 && typeof DecompressionStream === 'function') return new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer().then(function (b) { return new Uint8Array(b); });
-      return Promise.reject(new Error('unsupported compression inside the zip'));
+      if (method === 0) jobs.push(Promise.resolve({ name: name, data: data }));
+      else if (method === 8 && typeof DecompressionStream === 'function') jobs.push(new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer().then((function (nm) { return function (b) { return { name: nm, data: new Uint8Array(b) }; }; })(name)));
+      else return Promise.reject(new Error(method === 8 ? 'this browser cannot unzip the KMZ; unzip it and add the .kml instead' : 'unsupported compression inside the zip'));
     }
-    return Promise.reject(new Error('no .kml file inside the KMZ'));
+    return Promise.all(jobs);
   }
-  function readKml(file) {                                    // .kml text, or .kmz (a zip holding the .kml) -> FeatureCollection
-    if (/\.kmz$/i.test(file.name)) return file.arrayBuffer().then(function (b) { return unzipFirst(b, /\.kml$/i); }).then(function (u8) { return kmlToGeoJSON(new TextDecoder().decode(u8)); });
+  function readKml(file) {                                    // .kml text, or .kmz (a zip holding one or more .kml files) -> FeatureCollection
+    if (/\.kmz$/i.test(file.name)) return file.arrayBuffer().then(function (b) { return unzipEntries(b, /\.kml$/i); }).then(function (entries) {
+      if (!entries.length) throw new Error('no .kml file inside the KMZ');
+      var feats = [], errors = 0; entries.forEach(function (e) { try { feats = feats.concat(kmlToGeoJSON(new TextDecoder().decode(e.data)).features); } catch (err) { errors++; } });
+      if (errors && !feats.length) throw new Error('the file is not well-formed KML'); return { type: 'FeatureCollection', features: feats };
+    });
     return file.text().then(kmlToGeoJSON);
   }
   function isKml(files) { return Array.prototype.slice.call(files).some(function (f) { return /\.km[lz]$/i.test(f.name); }); }
