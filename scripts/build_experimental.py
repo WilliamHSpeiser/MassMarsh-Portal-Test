@@ -7,7 +7,7 @@ import datetime, re, sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-EXTRA_TOOLS = ['tool-planet.js']                      # loaded by the experimental page only
+EXTRA_TOOLS = ['tool-planet.js', 'tool-channel.js']                      # loaded by the experimental page only
 VERSION = sys.argv[1] if len(sys.argv) > 1 else datetime.datetime.now().strftime('%Y%m%d') + 'a'
 
 
